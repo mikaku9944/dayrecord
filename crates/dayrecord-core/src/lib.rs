@@ -8,6 +8,7 @@ pub mod error;
 pub mod export;
 pub mod models;
 pub mod paths;
+pub mod patterns;
 pub mod ports;
 pub mod prompt;
 pub mod redact;
