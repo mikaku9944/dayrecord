@@ -7,7 +7,7 @@
 //!   (full bitemporal fact log including superseded entries).
 
 use crate::domain::habits::HabitProfile;
-use crate::models::{Fact, Summary};
+use crate::models::{Fact, FactCategory, Summary, TaskUnit};
 use std::path::{Path, PathBuf};
 
 pub const USER_MD_LIMIT: usize = 1375;
@@ -81,6 +81,45 @@ pub fn render_user_md(profile: &HabitProfile) -> String {
     truncate_chars(&lines.join("\n"), USER_MD_LIMIT)
 }
 
+pub fn render_routines_section(active_facts: &[Fact]) -> String {
+    let routines: Vec<&Fact> = active_facts
+        .iter()
+        .filter(|f| matches!(f.category, FactCategory::Routine | FactCategory::Schedule))
+        .collect();
+    if routines.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec!["\n## 工作流与自动化候选".to_string()];
+    for f in routines.iter().take(8) {
+        lines.push(format!(
+            "- {}（{}，置信度 {:.0}%）",
+            f.statement(),
+            f.category.as_str(),
+            f.confidence * 100.0
+        ));
+    }
+    lines.join("\n")
+}
+
+pub fn render_task_units_section(units: &[TaskUnit]) -> String {
+    if units.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec!["\n## 近期任务单元".to_string()];
+    for u in units.iter().take(8) {
+        lines.push(format!(
+            "- {} {}-{} {} | 犹豫 {:.0}% | {}",
+            u.day,
+            u.started_at.format("%H:%M"),
+            u.ended_at.format("%H:%M"),
+            u.name,
+            u.hesitation_score * 100.0,
+            u.goal_guess
+        ));
+    }
+    lines.join("\n")
+}
+
 pub fn render_memory_md(active_facts: &[Fact]) -> String {
     let mut lines = vec![
         "# 环境与用户事实".to_string(),
@@ -103,7 +142,21 @@ pub fn render_memory_md(active_facts: &[Fact]) -> String {
         }
     }
 
-    truncate_chars(&lines.join("\n"), MEMORY_MD_LIMIT)
+    let base = lines.join("\n");
+    truncate_chars(&base, MEMORY_MD_LIMIT)
+}
+
+pub fn render_memory_md_with_insights(active_facts: &[Fact], task_units: &[TaskUnit]) -> String {
+    let mut content = render_memory_md(active_facts);
+    let routines = render_routines_section(active_facts);
+    let tasks = render_task_units_section(task_units);
+    if !routines.is_empty() || !tasks.is_empty() {
+        content = truncate_chars(
+            &format!("{content}{routines}{tasks}"),
+            MEMORY_MD_LIMIT + 400,
+        );
+    }
+    content
 }
 
 pub fn render_facts_md(all_facts: &[Fact]) -> String {

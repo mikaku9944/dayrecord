@@ -2,7 +2,7 @@
 
 use crate::domain::habits::{build_profile, HabitProfile, DEFAULT_WINDOW_DAYS};
 use crate::export::{render_daily_memory, render_memory_md, render_user_md};
-use crate::models::{Fact, Summary};
+use crate::models::{Fact, FactCategory, Summary, TaskUnit};
 use crate::ports::Repository;
 use crate::redact::sanitize;
 use chrono::Utc;
@@ -45,8 +45,22 @@ pub struct ContextBundle {
     pub platform: String,
     pub profile: Option<HabitProfile>,
     pub active_facts: Vec<FactJson>,
+    pub routines: Vec<FactJson>,
+    pub recent_task_units: Vec<TaskUnitJson>,
     pub recent_summaries: Vec<SummaryJson>,
     pub matched_facts: Vec<FactJson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskUnitJson {
+    pub day: String,
+    pub started_at: String,
+    pub ended_at: String,
+    pub name: String,
+    pub goal_guess: String,
+    pub app_chain: String,
+    pub hesitation_score: f32,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +98,13 @@ impl ContextBundle {
 
         let active_facts = repo.list_active_facts()?;
         let active_json: Vec<FactJson> = active_facts.iter().map(fact_to_json).collect();
+        let routines: Vec<FactJson> = active_facts
+            .iter()
+            .filter(|f| matches!(f.category, FactCategory::Routine | FactCategory::Schedule))
+            .map(fact_to_json)
+            .collect();
+        let task_units = repo.list_task_units_recent(7)?;
+        let recent_task_units: Vec<TaskUnitJson> = task_units.iter().map(task_unit_to_json).collect();
 
         let (recent_summaries, matched_facts, scope_label) = match &scope {
             ContextScope::User => {
@@ -126,6 +147,8 @@ impl ContextBundle {
             platform: platform.to_string(),
             profile: Some(profile),
             active_facts: active_json,
+            routines,
+            recent_task_units,
             recent_summaries,
             matched_facts,
         })
@@ -155,6 +178,16 @@ impl ContextBundle {
             parts.push(String::new());
         }
 
+        if !self.routines.is_empty() {
+            parts.push(render_routines_md(&self.routines));
+            parts.push(String::new());
+        }
+
+        if !self.recent_task_units.is_empty() {
+            parts.push(render_task_units_md(&self.recent_task_units));
+            parts.push(String::new());
+        }
+
         for s in &self.recent_summaries {
             parts.push(format!(
                 "## 复盘 {}\n\n{}",
@@ -178,6 +211,48 @@ impl ContextBundle {
 
         parts.join("\n")
     }
+}
+
+pub fn task_unit_to_json(u: &TaskUnit) -> TaskUnitJson {
+    TaskUnitJson {
+        day: u.day.clone(),
+        started_at: u.started_at.format("%H:%M").to_string(),
+        ended_at: u.ended_at.format("%H:%M").to_string(),
+        name: sanitize(&u.name),
+        goal_guess: sanitize(&u.goal_guess),
+        app_chain: u.app_chain.clone(),
+        hesitation_score: u.hesitation_score,
+        confidence: u.confidence,
+    }
+}
+
+fn render_routines_md(routines: &[FactJson]) -> String {
+    let mut lines = vec!["## 工作流与自动化候选".to_string()];
+    for f in routines {
+        lines.push(format!(
+            "- {}（{}，{:.0}%）",
+            f.statement,
+            f.category,
+            f.confidence * 100.0
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_task_units_md(units: &[TaskUnitJson]) -> String {
+    let mut lines = vec!["## 近期任务单元".to_string()];
+    for u in units.iter().take(10) {
+        lines.push(format!(
+            "- {} {} {}-{} | 犹豫 {:.0}% | {}",
+            u.day,
+            u.name,
+            u.started_at,
+            u.ended_at,
+            u.hesitation_score * 100.0,
+            u.goal_guess
+        ));
+    }
+    lines.join("\n")
 }
 
 pub fn fact_to_json(f: &Fact) -> FactJson {

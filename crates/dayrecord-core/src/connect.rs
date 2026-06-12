@@ -3,7 +3,7 @@
 use crate::domain::habits::{build_profile, DEFAULT_WINDOW_DAYS};
 use crate::export::{
     default_export_dir as hermes_default_dir, render_daily_memory, render_facts_md,
-    render_memory_md, render_user_md, README_TXT,
+    render_memory_md_with_insights, render_user_md, README_TXT,
 };
 use crate::paths;
 use crate::ports::Repository;
@@ -87,12 +87,13 @@ pub fn export_all<R: Repository>(
     let profile = build_profile(&activities, DEFAULT_WINDOW_DAYS);
     let active_facts = repo.list_active_facts()?;
     let all_facts = repo.list_all_facts()?;
+    let task_units = repo.list_task_units_recent(7)?;
 
     let summary_from = (end - chrono::Duration::days(29)).format("%Y-%m-%d").to_string();
     let summaries = repo.summaries_for_range(&summary_from, &to)?;
 
     let user_md = render_user_md(&profile);
-    let memory_md = render_memory_md(&active_facts);
+    let memory_md = render_memory_md_with_insights(&active_facts, &task_units);
     let facts_md = render_facts_md(&all_facts);
 
     let mut files = Vec::new();
