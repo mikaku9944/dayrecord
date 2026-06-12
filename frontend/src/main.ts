@@ -329,7 +329,7 @@ function renderRecapPanel(): string {
 
 function renderSettingsPanel(): string {
   const keyHint = state.hasApiKey
-    ? "已配置（DPAPI 加密）"
+    ? "已配置（系统密钥链）"
     : "未配置时将使用占位复盘";
   return `
     <section class="sketch-card settings-panel" aria-label="设置">
@@ -430,10 +430,23 @@ function bindEvents(): void {
 
   document.getElementById("save-key")?.addEventListener("click", async () => {
     const input = document.getElementById("api-key") as HTMLInputElement;
-    await api.setApiKey(input.value.trim());
-    state.hasApiKey = !!input.value.trim();
-    state.message = "API Key 已保存";
-    state.error = "";
+    const key = input.value.trim();
+    if (!key) {
+      state.error = "请输入有效的 API Key";
+      state.message = "";
+      render();
+      return;
+    }
+    try {
+      await api.setApiKey(key);
+      state.hasApiKey = true;
+      state.apiKeyInput = "";
+      state.message = "API Key 已保存，将用于生成复盘与抽取事实";
+      state.error = "";
+    } catch (e) {
+      state.error = String(e);
+      state.message = "";
+    }
     render();
   });
 

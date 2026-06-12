@@ -44,24 +44,49 @@ fn app_context_sampler() -> AppContextSampler {
     dayrecord_core::ports::NullContextSampler
 }
 
-pub enum DeepSeekLlm {
+enum LlmBackend {
     Client(DeepSeekClient),
     Mock(MockLlm),
 }
 
+/// LLM client that can reload when the user saves a new API key (no app restart).
+pub struct DeepSeekLlm {
+    backend: std::sync::Mutex<LlmBackend>,
+}
+
 pub struct MockLlm;
 
-impl LlmClient for MockLlm {
+impl MockLlm {
     fn complete(&self, _: &str, _: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         Ok("## 今日概览（含大致时间分配）\nplaceholder\n## 主要工作内容（按应用/项目/场景分组，结合时长说明投入）\nplaceholder\n## 重要粘贴片段摘要\nplaceholder\n## 明日待办（能推断则列出，否则写「暂无」）\n暂无".into())
     }
 }
 
+impl DeepSeekLlm {
+    pub fn new(api_key: Option<String>) -> Self {
+        Self {
+            backend: std::sync::Mutex::new(match api_key.filter(|k| !k.is_empty()) {
+                Some(key) => LlmBackend::Client(DeepSeekClient::new(key)),
+                None => LlmBackend::Mock(MockLlm),
+            }),
+        }
+    }
+
+    pub fn reload(&self, api_key: Option<String>) {
+        let mut backend = self.backend.lock().unwrap();
+        *backend = match api_key.filter(|k| !k.is_empty()) {
+            Some(key) => LlmBackend::Client(DeepSeekClient::new(key)),
+            None => LlmBackend::Mock(MockLlm),
+        };
+    }
+}
+
 impl LlmClient for DeepSeekLlm {
     fn complete(&self, system: &str, user: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        match self {
-            Self::Client(c) => c.complete(system, user),
-            Self::Mock(m) => m.complete(system, user),
+        let backend = self.backend.lock().unwrap();
+        match &*backend {
+            LlmBackend::Client(c) => c.complete(system, user),
+            LlmBackend::Mock(m) => m.complete(system, user),
         }
     }
 }
@@ -77,14 +102,10 @@ pub fn db_path() -> std::path::PathBuf {
 pub fn build_orchestrator(api_key: Option<String>) -> Result<Arc<AppOrchestrator>, String> {
     paths::ensure_data_dir().map_err(|e| e.to_string())?;
     let repo = Arc::new(SqliteRepository::open(&db_path()).map_err(|e| e.to_string())?);
-    let llm = match api_key.filter(|k| !k.is_empty()) {
-        Some(key) => DeepSeekLlm::Client(DeepSeekClient::new(key)),
-        None => DeepSeekLlm::Mock(MockLlm),
-    };
     Ok(Arc::new(Orchestrator::new(
         Arc::new(SystemClock),
         repo,
-        Arc::new(llm),
+        Arc::new(DeepSeekLlm::new(api_key)),
         Arc::new(platform_window_sampler()),
         Arc::new(platform_clipboard()),
         Arc::new(app_context_sampler()),

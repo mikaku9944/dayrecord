@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "dayrecord-adapters"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "active-win-pos-rs",
  "anyhow",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "dayrecord-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -901,7 +901,7 @@ dependencies = [
 
 [[package]]
 name = "dayrecord-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "dayrecord-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "directories",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "dayrecord-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dayrecord-core",

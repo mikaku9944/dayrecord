@@ -1,7 +1,7 @@
 use dayrecord_core::ports::SecretStore;
 use std::error::Error;
 
-const SERVICE: &str = "com.dayrecord.app";
+const SERVICE: &str = "com.dayrecord.desktop";
 
 pub struct KeyringSecretStore;
 
@@ -28,7 +28,22 @@ impl SecretStore for KeyringSecretStore {
         let entry = keyring::Entry::new(SERVICE, key)?;
         match entry.get_password() {
             Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring::Error::NoEntry) => {
+                const LEGACY_SERVICE: &str = "com.dayrecord.app";
+                if SERVICE == LEGACY_SERVICE {
+                    return Ok(None);
+                }
+                let legacy = keyring::Entry::new(LEGACY_SERVICE, key)?;
+                match legacy.get_password() {
+                    Ok(v) => {
+                        entry.set_password(&v)?;
+                        let _ = legacy.delete_credential();
+                        Ok(Some(v))
+                    }
+                    Err(keyring::Error::NoEntry) => Ok(None),
+                    Err(e) => Err(Box::new(e)),
+                }
+            }
             Err(e) => Err(Box::new(e)),
         }
     }

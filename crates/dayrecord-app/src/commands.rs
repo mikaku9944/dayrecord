@@ -60,8 +60,14 @@ pub fn set_consent(state: State<'_, AppState>, accepted: bool) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn set_api_key(key: String) -> Result<(), String> {
-    save_api_key(&secret_store(), &key)
+pub fn set_api_key(key: String, state: State<'_, AppState>) -> Result<(), String> {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return Err("请输入有效的 API Key".into());
+    }
+    save_api_key(&secret_store(), trimmed)?;
+    state.orchestrator.llm.reload(Some(trimmed.to_string()));
+    Ok(())
 }
 
 #[tauri::command]

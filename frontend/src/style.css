@@ -526,9 +526,37 @@ body {
   margin-top: 0;
 }
 
+.paper-preview p {
+  margin: 0 0 8px;
+}
+
+.paper-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.paper-preview h3 {
+  margin: 10px 0 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--graphite);
+}
+
+.paper-preview ul {
+  margin: 0 0 10px;
+  padding-left: 1.25em;
+}
+
 .paper-preview li {
-  margin-left: 1.2em;
   margin-bottom: 4px;
+}
+
+.paper-preview strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.paper-preview .md-ordered {
+  padding-left: 0.25em;
 }
 
 /* ── Feedback ── */
