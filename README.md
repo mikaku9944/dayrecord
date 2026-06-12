@@ -1,6 +1,7 @@
 # DayRecord
 
 [![CI](https://github.com/mikaku9944/dayrecord/actions/workflows/ci.yml/badge.svg)](https://github.com/mikaku9944/dayrecord/actions/workflows/ci.yml)
+[![Release](https://github.com/mikaku9944/dayrecord/actions/workflows/release.yml/badge.svg)](https://github.com/mikaku9944/dayrecord/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **看得懂你在干什么，却从不截一张图。**
@@ -29,7 +30,21 @@
 
 ## 安装
 
-### CLI（推荐 Agent 接入）
+### 预编译（开箱即用，推荐）
+
+从 [GitHub Releases](https://github.com/mikaku9944/dayrecord/releases) 下载：
+
+| 平台 | 产物 |
+|------|------|
+| Windows | `dayrecord-*.zip`（CLI）+ `.msi`（GUI） |
+| macOS (ARM) | `dayrecord-*-aarch64-apple-darwin.tar.gz` |
+| Linux x64 | `dayrecord-*-x86_64-unknown-linux-gnu.tar.gz` |
+
+详细步骤见 [预编译安装说明](docs/install-prebuilt.md)。
+
+### 从源码构建
+
+**CLI：**
 
 ```bash
 git clone https://github.com/mikaku9944/dayrecord.git
@@ -37,7 +52,7 @@ cd dayrecord
 cargo install --path crates/dayrecord-cli
 ```
 
-### 桌面 GUI（Windows 优先）
+**桌面 GUI（Windows 优先）：**
 
 ```powershell
 git clone https://github.com/mikaku9944/dayrecord.git
@@ -93,6 +108,7 @@ cd frontend && npm test
 
 - [隐私说明](PRIVACY.md)
 - [贡献指南](CONTRIBUTING.md)
+- [预编译安装](docs/install-prebuilt.md)
 - [打包与分发](docs/packaging.md)
 - [macOS 权限](docs/macos-permissions.md)
 - [验收清单](docs/acceptance-checklist.md)

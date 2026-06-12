@@ -2,17 +2,28 @@
 
 ## CLI / MCP 二进制
 
+**预编译（用户）：** [GitHub Releases](https://github.com/mikaku9944/dayrecord/releases) — 见 [install-prebuilt.md](install-prebuilt.md)
+
+**源码安装（开发者）：**
+
 ```bash
 cargo install --path crates/dayrecord-cli
 ```
 
-GitHub Releases 建议附带三平台预编译包：
+打 tag 触发 Release CI（`v*`）：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+产物：
 
 | 平台 | 产物 |
 |------|------|
-| Windows | `dayrecord-x86_64-pc-windows-msvc.zip` |
-| macOS | `dayrecord-aarch64-apple-darwin.tar.gz` |
-| Linux | `dayrecord-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows | `dayrecord-<ver>-x86_64-pc-windows-msvc.zip` + GUI `.msi` |
+| macOS | `dayrecord-<ver>-aarch64-apple-darwin.tar.gz` |
+| Linux | `dayrecord-<ver>-x86_64-unknown-linux-gnu.tar.gz` |
 
 ### 包管理器（社区维护）
 
