@@ -1,12 +1,19 @@
-use chrono::Utc;
-use dayrecord_core::consolidation::parse_candidate_facts;
+use chrono::{NaiveDate, Utc};
+use dayrecord_core::consolidation::{parse_candidate_facts, parse_task_unit_candidates};
+use dayrecord_core::domain::habits::DEFAULT_WINDOW_DAYS;
 use dayrecord_core::domain::session::SessionBuilder;
 use dayrecord_core::domain::{ActivityTracker, SAMPLE_INTERVAL_SECS};
-use dayrecord_core::models::{Fact, KeyEventKind, Summary, WindowSample};
+use dayrecord_core::models::{Fact, FlowEvent, FlowEventKind, KeyEventKind, Summary, TaskUnit, WindowSample};
+use dayrecord_core::patterns::{
+    detect_rhythms, format_app_chain, hesitation_metrics, mine_repeats, repeat_to_fact, rhythm_to_fact,
+    segment_tasks, FLOW_PREVIEW_CHARS,
+};
 use dayrecord_core::ports::{Clock, Clipboard, ContextSampler, LlmClient, Repository, WindowSampler};
 use dayrecord_core::prompt::{
-    build_extraction_user_prompt, build_summary_user_prompt, EXTRACTION_SYSTEM, SUMMARY_SYSTEM,
+    build_extraction_user_prompt, build_summary_user_prompt, build_task_naming_prompt,
+    EXTRACTION_SYSTEM, SUMMARY_SYSTEM, TASK_NAMING_SYSTEM,
 };
+use dayrecord_core::redact::sanitize;
 use dayrecord_core::summary::normalize_summary_markdown;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -117,6 +124,30 @@ where
         Ok(())
     }
 
+    fn record_flow_event(
+        &self,
+        kind: FlowEventKind,
+        text: &str,
+        at: chrono::DateTime<Utc>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let builder = self.session_builder.lock().unwrap();
+        let sanitized = sanitize(text);
+        let char_len = sanitized.chars().count();
+        let preview: String = sanitized.chars().take(FLOW_PREVIEW_CHARS).collect();
+        let day = at.format("%Y-%m-%d").to_string();
+        self.repo.insert_flow_event(&FlowEvent {
+            id: None,
+            day,
+            at,
+            kind,
+            app_name: builder.app_name.clone(),
+            window_title: builder.window_title.clone(),
+            content_preview: preview,
+            char_len,
+        })?;
+        Ok(())
+    }
+
     pub fn handle_key_event(&self, event: dayrecord_core::models::KeyEvent) -> Result<(), Box<dyn Error + Send + Sync>> {
         if !self.is_recording() {
             return Ok(());
@@ -124,11 +155,19 @@ where
         let now = event.at;
         self.activity_tracker.lock().unwrap().record_input(now);
 
-        if matches!(event.kind, KeyEventKind::Paste) {
+        if matches!(event.kind, KeyEventKind::Paste | KeyEventKind::Copy) {
             if let Some(text) = self.clipboard.read_text()? {
-                let mut builder = self.session_builder.lock().unwrap();
-                if let Some(session) = builder.on_paste(&*self.clock, &text, now) {
-                    self.repo.insert_session(&session)?;
+                let flow_kind = if matches!(event.kind, KeyEventKind::Copy) {
+                    FlowEventKind::Copy
+                } else {
+                    FlowEventKind::Paste
+                };
+                let _ = self.record_flow_event(flow_kind, &text, now);
+                if matches!(event.kind, KeyEventKind::Paste) {
+                    let mut builder = self.session_builder.lock().unwrap();
+                    if let Some(session) = builder.on_paste(&*self.clock, &text, now) {
+                        self.repo.insert_session(&session)?;
+                    }
                 }
             }
             return Ok(());
@@ -170,8 +209,79 @@ where
         Ok(summary)
     }
 
+    pub fn extract_behavioral_patterns(&self, day: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let end = NaiveDate::parse_from_str(day, "%Y-%m-%d").unwrap_or_else(|_| Utc::now().date_naive());
+        let from = (end - chrono::Duration::days(DEFAULT_WINDOW_DAYS - 1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let activities = self.repo.activities_for_range(&from, day)?;
+        for rhythm in detect_rhythms(&activities, DEFAULT_WINDOW_DAYS) {
+            let (subject, predicate, object, confidence) = rhythm_to_fact(&rhythm);
+            self.repo.upsert_fact(
+                &subject,
+                &predicate,
+                &object,
+                "schedule",
+                confidence,
+                day,
+            )?;
+        }
+        for repeat in mine_repeats(&activities) {
+            let (subject, predicate, object, confidence) = repeat_to_fact(&repeat);
+            self.repo.upsert_fact(
+                &subject,
+                &predicate,
+                &object,
+                "routine",
+                confidence,
+                day,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn extract_task_units(&self, day: &str) -> Result<usize, Box<dyn Error + Send + Sync>> {
+        self.flush_pending()?;
+        let activities = self.repo.list_activities_for_day(day)?;
+        let sessions = self.repo.list_sessions_for_day(day)?;
+        let segments = segment_tasks(&activities, &sessions);
+        if segments.is_empty() {
+            return Ok(0);
+        }
+        let user = build_task_naming_prompt(day, &segments);
+        let raw = self.llm.complete(TASK_NAMING_SYSTEM, &user)?;
+        let candidates = parse_task_unit_candidates(&raw).map_err(|e| e.to_string())?;
+        if candidates.len() != segments.len() {
+            return Err(format!(
+                "任务命名数量不匹配：{} 个分段，LLM 返回 {} 条",
+                segments.len(),
+                candidates.len()
+            )
+            .into());
+        }
+        let mut units = Vec::new();
+        for (seg, cand) in segments.iter().zip(candidates.iter()) {
+            let hesitation = hesitation_metrics(seg, &sessions);
+            units.push(TaskUnit {
+                id: None,
+                day: day.to_string(),
+                started_at: seg.started_at,
+                ended_at: seg.ended_at,
+                name: cand.name.clone(),
+                goal_guess: cand.goal_guess.clone(),
+                app_chain: format_app_chain(&seg.app_chain),
+                hesitation_score: hesitation.score,
+                confidence: cand.confidence,
+            });
+        }
+        self.repo.replace_task_units_for_day(day, &units)?;
+        Ok(units.len())
+    }
+
     pub fn extract_facts(&self, day: &str) -> Result<usize, Box<dyn Error + Send + Sync>> {
         self.flush_pending()?;
+        let _ = self.extract_behavioral_patterns(day);
+        let _ = self.extract_task_units(day);
         let activities = self.repo.activity_agg_for_day(day)?;
         let sessions = self.repo.list_sessions_for_day(day)?;
         if activities.is_empty() && sessions.is_empty() {
@@ -293,6 +403,7 @@ mod tests {
             content: "work".into(),
             has_paste: false,
             uia_text: None,
+            backspace_count: 0,
         })
         .unwrap();
         let orch = Orchestrator::new(
@@ -321,6 +432,7 @@ mod tests {
             content: "work".into(),
             has_paste: false,
             uia_text: None,
+            backspace_count: 0,
         })
         .unwrap();
         let summary = orch.generate_summary("2026-06-10").unwrap();

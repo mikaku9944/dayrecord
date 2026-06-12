@@ -6,6 +6,7 @@
 
 use crate::models::{CandidateFact, FactCategory};
 use crate::CoreError;
+use serde::{Deserialize, Serialize};
 
 pub fn parse_candidate_facts(json: &str) -> Result<Vec<CandidateFact>, CoreError> {
     #[derive(serde::Deserialize)]
@@ -44,6 +45,49 @@ pub fn parse_candidate_facts(json: &str) -> Result<Vec<CandidateFact>, CoreError
                 predicate,
                 object,
                 category,
+                confidence: r.confidence.clamp(0.0, 1.0),
+            })
+        })
+        .collect())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CandidateTaskUnit {
+    pub name: String,
+    pub goal_guess: String,
+    pub confidence: f32,
+}
+
+pub fn parse_task_unit_candidates(json: &str) -> Result<Vec<CandidateTaskUnit>, CoreError> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        name: String,
+        goal_guess: String,
+        confidence: f32,
+    }
+
+    let trimmed = json.trim();
+    let start = trimmed
+        .find('[')
+        .ok_or_else(|| CoreError::ConsolidationParse("no json array".into()))?;
+    let end = trimmed
+        .rfind(']')
+        .ok_or_else(|| CoreError::ConsolidationParse("no json array end".into()))?;
+    let slice = &trimmed[start..=end];
+
+    let raw: Vec<Raw> =
+        serde_json::from_str(slice).map_err(|e| CoreError::ConsolidationParse(e.to_string()))?;
+
+    Ok(raw
+        .into_iter()
+        .filter_map(|r| {
+            let name = r.name.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some(CandidateTaskUnit {
+                name,
+                goal_guess: r.goal_guess.trim().to_string(),
                 confidence: r.confidence.clamp(0.0, 1.0),
             })
         })
@@ -89,5 +133,14 @@ mod tests {
         assert!(FactCategory::Preference.is_singleton());
         assert!(!FactCategory::Topic.is_singleton());
         assert!(!FactCategory::Schedule.is_singleton());
+        assert!(!FactCategory::Routine.is_singleton());
+    }
+
+    #[test]
+    fn parses_task_unit_candidates() {
+        let json = r#"[{"name":"写 PRD","goal_guess":"整理产品需求","confidence":0.7}]"#;
+        let units = parse_task_unit_candidates(json).unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].name, "写 PRD");
     }
 }
