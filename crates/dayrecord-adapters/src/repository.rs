@@ -1,12 +1,15 @@
 use chrono::{DateTime, Utc};
-use dayrecord_core::models::{Activity, ActivityAgg, DayStats, Fact, FactCategory, Session, Summary};
+use dayrecord_core::models::{
+    Activity, ActivityAgg, DayStats, Fact, FactCategory, FlowEvent, FlowEventKind, Session, Summary,
+    TaskUnit,
+};
 use dayrecord_core::ports::Repository;
 use rusqlite::{params, Connection};
 use std::error::Error;
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 pub struct SqliteRepository {
     conn: Mutex<Connection>,
@@ -28,69 +31,180 @@ impl SqliteRepository {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap_or(0);
-        if version != SCHEMA_VERSION {
+        if version == 0 {
+            if Self::table_exists(&conn, "sessions") {
+                Self::migrate_incremental(&conn, 2)?;
+            } else {
+                Self::create_schema_v3(&conn)?;
+            }
+        } else if version < SCHEMA_VERSION {
+            Self::migrate_incremental(&conn, version)?;
+        }
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        Ok(())
+    }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+            params![name],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    }
+
+    fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+        let sql = format!("PRAGMA table_info({table})");
+        let mut stmt = match conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1));
+        if let Ok(rows) = rows {
+            for name in rows.flatten() {
+                if name == column {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn create_schema_v3(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                window_title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                has_paste INTEGER NOT NULL DEFAULT 0,
+                uia_text TEXT,
+                backspace_count INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_day ON sessions(day);
+            CREATE TABLE IF NOT EXISTS activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                window_title TEXT NOT NULL,
+                seconds INTEGER NOT NULL,
+                uia_snapshot TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_activities_day ON activities(day);
+            CREATE TABLE IF NOT EXISTS summaries (
+                day TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                object TEXT NOT NULL,
+                category TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                observations INTEGER NOT NULL DEFAULT 1,
+                valid_at TEXT NOT NULL,
+                invalid_at TEXT,
+                source_day TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(subject, predicate, object)
+            );
+            CREATE INDEX IF NOT EXISTS idx_facts_active ON facts(invalid_at);
+            CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
+            CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(subject, object);
+            CREATE TABLE IF NOT EXISTS flow_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                at TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                window_title TEXT NOT NULL,
+                content_preview TEXT NOT NULL,
+                char_len INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_flow_events_day ON flow_events(day);
+            CREATE TABLE IF NOT EXISTS task_units (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                name TEXT NOT NULL,
+                goal_guess TEXT NOT NULL,
+                app_chain TEXT NOT NULL,
+                hesitation_score REAL NOT NULL,
+                confidence REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_task_units_day ON task_units(day);
+            "#,
+        )
+    }
+
+    fn migrate_incremental(conn: &Connection, from_version: i32) -> Result<(), rusqlite::Error> {
+        if from_version < 2 || !Self::table_exists(conn, "sessions") {
             conn.execute_batch(
                 "DROP TABLE IF EXISTS facts_fts;
                  DROP TABLE IF EXISTS facts;
                  DROP TABLE IF EXISTS sessions;
                  DROP TABLE IF EXISTS activities;
                  DROP TABLE IF EXISTS summaries;
-                 DROP TABLE IF EXISTS settings;",
+                 DROP TABLE IF EXISTS settings;
+                 DROP TABLE IF EXISTS flow_events;
+                 DROP TABLE IF EXISTS task_units;",
             )?;
+            return Self::create_schema_v3(conn);
+        }
+        if !Self::column_exists(conn, "sessions", "backspace_count") {
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN backspace_count INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !Self::table_exists(conn, "flow_events") {
             conn.execute_batch(
                 r#"
-                CREATE TABLE sessions (
+                CREATE TABLE flow_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     day TEXT NOT NULL,
-                    started_at TEXT NOT NULL,
-                    ended_at TEXT NOT NULL,
+                    at TEXT NOT NULL,
+                    kind TEXT NOT NULL,
                     app_name TEXT NOT NULL,
                     window_title TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    has_paste INTEGER NOT NULL DEFAULT 0,
-                    uia_text TEXT
+                    content_preview TEXT NOT NULL,
+                    char_len INTEGER NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS idx_sessions_day ON sessions(day);
-                CREATE TABLE activities (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    day TEXT NOT NULL,
-                    started_at TEXT NOT NULL,
-                    ended_at TEXT NOT NULL,
-                    app_name TEXT NOT NULL,
-                    window_title TEXT NOT NULL,
-                    seconds INTEGER NOT NULL,
-                    uia_snapshot TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_activities_day ON activities(day);
-                CREATE TABLE summaries (
-                    day TEXT PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                CREATE TABLE settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-                CREATE TABLE facts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    subject TEXT NOT NULL,
-                    predicate TEXT NOT NULL,
-                    object TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    observations INTEGER NOT NULL DEFAULT 1,
-                    valid_at TEXT NOT NULL,
-                    invalid_at TEXT,
-                    source_day TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(subject, predicate, object)
-                );
-                CREATE INDEX IF NOT EXISTS idx_facts_active ON facts(invalid_at);
-                CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
-                CREATE VIRTUAL TABLE facts_fts USING fts5(subject, object);
+                CREATE INDEX IF NOT EXISTS idx_flow_events_day ON flow_events(day);
                 "#,
             )?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        }
+        if !Self::table_exists(conn, "task_units") {
+            conn.execute_batch(
+                r#"
+                CREATE TABLE task_units (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    goal_guess TEXT NOT NULL,
+                    app_chain TEXT NOT NULL,
+                    hesitation_score REAL NOT NULL,
+                    confidence REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_task_units_day ON task_units(day);
+                "#,
+            )?;
         }
         Ok(())
     }
@@ -134,8 +248,8 @@ impl Repository for SqliteRepository {
         }
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO sessions (day, started_at, ended_at, app_name, window_title, content, has_paste, uia_text)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO sessions (day, started_at, ended_at, app_name, window_title, content, has_paste, uia_text, backspace_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 session.day,
                 Self::format_dt(session.started_at),
@@ -145,6 +259,7 @@ impl Repository for SqliteRepository {
                 session.content,
                 session.has_paste as i32,
                 session.uia_text,
+                session.backspace_count,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -153,7 +268,7 @@ impl Repository for SqliteRepository {
     fn list_sessions_for_day(&self, day: &str) -> Result<Vec<Session>, Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, day, started_at, ended_at, app_name, window_title, content, has_paste, uia_text
+            "SELECT id, day, started_at, ended_at, app_name, window_title, content, has_paste, uia_text, backspace_count
              FROM sessions WHERE day = ?1 ORDER BY started_at",
         )?;
         let rows = stmt.query_map(params![day], |row| {
@@ -167,6 +282,7 @@ impl Repository for SqliteRepository {
                 content: row.get(6)?,
                 has_paste: row.get::<_, i32>(7)? != 0,
                 uia_text: row.get(8)?,
+                backspace_count: row.get::<_, i32>(9)? as u32,
             })
         })?;
         Ok(rows.filter_map(Result::ok).collect())
@@ -331,6 +447,8 @@ impl Repository for SqliteRepository {
              DELETE FROM activities;
              DELETE FROM summaries;
              DELETE FROM facts;
+             DELETE FROM flow_events;
+             DELETE FROM task_units;
              DELETE FROM settings;",
         )?;
         drop(conn);
@@ -460,6 +578,110 @@ impl Repository for SqliteRepository {
         conn.execute("DELETE FROM facts_fts WHERE rowid = ?1", params![id])?;
         Ok(())
     }
+
+    fn insert_flow_event(&self, event: &FlowEvent) -> Result<i64, Box<dyn Error + Send + Sync>> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO flow_events (day, at, kind, app_name, window_title, content_preview, char_len)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                event.day,
+                Self::format_dt(event.at),
+                event.kind.as_str(),
+                event.app_name,
+                event.window_title,
+                event.content_preview,
+                event.char_len as i64,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    fn list_flow_events_for_day(&self, day: &str) -> Result<Vec<FlowEvent>, Box<dyn Error + Send + Sync>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, day, at, kind, app_name, window_title, content_preview, char_len
+             FROM flow_events WHERE day = ?1 ORDER BY at",
+        )?;
+        let rows = stmt.query_map(params![day], |row| {
+            let kind_str: String = row.get(3)?;
+            Ok(FlowEvent {
+                id: Some(row.get(0)?),
+                day: row.get(1)?,
+                at: Self::parse_dt(&row.get::<_, String>(2)?),
+                kind: FlowEventKind::parse(&kind_str).unwrap_or(FlowEventKind::Paste),
+                app_name: row.get(4)?,
+                window_title: row.get(5)?,
+                content_preview: row.get(6)?,
+                char_len: row.get::<_, i64>(7)? as usize,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    fn replace_task_units_for_day(&self, day: &str, units: &[TaskUnit]) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM task_units WHERE day = ?1", params![day])?;
+        for unit in units {
+            tx.execute(
+                "INSERT INTO task_units (day, started_at, ended_at, name, goal_guess, app_chain, hesitation_score, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    unit.day,
+                    Self::format_dt(unit.started_at),
+                    Self::format_dt(unit.ended_at),
+                    unit.name,
+                    unit.goal_guess,
+                    unit.app_chain,
+                    unit.hesitation_score,
+                    unit.confidence,
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn list_task_units_for_day(&self, day: &str) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, day, started_at, ended_at, name, goal_guess, app_chain, hesitation_score, confidence
+             FROM task_units WHERE day = ?1 ORDER BY started_at",
+        )?;
+        let rows = stmt.query_map(params![day], Self::row_to_task_unit)?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    fn list_task_units_recent(&self, days: u32) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>> {
+        let end = chrono::Local::now().date_naive();
+        let from = (end - chrono::Duration::days(days.saturating_sub(1) as i64))
+            .format("%Y-%m-%d")
+            .to_string();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, day, started_at, ended_at, name, goal_guess, app_chain, hesitation_score, confidence
+             FROM task_units WHERE day >= ?1 ORDER BY started_at DESC",
+        )?;
+        let rows = stmt.query_map(params![from], Self::row_to_task_unit)?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+}
+
+impl SqliteRepository {
+    fn row_to_task_unit(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskUnit> {
+        Ok(TaskUnit {
+            id: Some(row.get(0)?),
+            day: row.get(1)?,
+            started_at: Self::parse_dt(&row.get::<_, String>(2)?),
+            ended_at: Self::parse_dt(&row.get::<_, String>(3)?),
+            name: row.get(4)?,
+            goal_guess: row.get(5)?,
+            app_chain: row.get(6)?,
+            hesitation_score: row.get(7)?,
+            confidence: row.get(8)?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -482,9 +704,67 @@ mod tests {
             content: "hello".into(),
             has_paste: false,
             uia_text: None,
+            backspace_count: 0,
         };
         repo.insert_session(&session).unwrap();
         assert_eq!(repo.list_sessions_for_day("2026-06-10").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrates_v2_to_v3_preserves_sessions() {
+        let file = NamedTempFile::new().unwrap();
+        {
+            let conn = Connection::open(file.path()).unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT NOT NULL,
+                    app_name TEXT NOT NULL,
+                    window_title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    has_paste INTEGER NOT NULL DEFAULT 0,
+                    uia_text TEXT
+                );
+                PRAGMA user_version = 2;
+                "#,
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sessions (day, started_at, ended_at, app_name, window_title, content, has_paste)
+                 VALUES ('2026-06-10', '2026-06-10T09:00:00+00:00', '2026-06-10T09:01:00+00:00', 'app', 'w', 'hi', 0)",
+                [],
+            )
+            .unwrap();
+        }
+        let repo = SqliteRepository::open(file.path()).unwrap();
+        let sessions = repo.list_sessions_for_day("2026-06-10").unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].content, "hi");
+        assert_eq!(sessions[0].backspace_count, 0);
+    }
+
+    #[test]
+    fn flow_events_roundtrip() {
+        let file = NamedTempFile::new().unwrap();
+        let repo = SqliteRepository::open(file.path()).unwrap();
+        let now = Utc::now();
+        repo.insert_flow_event(&FlowEvent {
+            id: None,
+            day: "2026-06-10".into(),
+            at: now,
+            kind: FlowEventKind::Copy,
+            app_name: "code.exe".into(),
+            window_title: "main.rs".into(),
+            content_preview: "fn main".into(),
+            char_len: 7,
+        })
+        .unwrap();
+        let events = repo.list_flow_events_for_day("2026-06-10").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, FlowEventKind::Copy);
     }
 
     #[test]

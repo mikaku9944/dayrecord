@@ -11,6 +11,8 @@
 | 数据 | 位置 | 说明 |
 |------|------|------|
 | 活动与会话 | `dayrecord.db` | 各平台数据目录见 `dayrecord data-dir` |
+| 复制/粘贴流转 | `flow_events` 表 | Ctrl+C/Ctrl+V 时记录应用、窗口与**脱敏后 80 字预览**（为跨应用流转分析蓄数据） |
+| 任务单元 | `task_units` 表 | 预分段 + LLM 命名的任务块与犹豫指标 |
 | API Key | 系统密钥链 (keyring) | Windows Credential / macOS Keychain / Linux Secret Service |
 | Agent 导出 | `agent-export/` 等 | 用户可删除或自定义路径 |
 
@@ -18,7 +20,7 @@
 
 | 平台 | 权限 | 用途 |
 |------|------|------|
-| Windows | 无额外弹窗（钩子可能触发杀软提示） | 键盘、窗口、UIA |
+| Windows | 无额外弹窗（钩子可能触发杀软提示） | 键盘（含 Ctrl+C/V）、窗口、UIA、剪贴板预览 |
 | macOS | 辅助功能、输入监控 | AX 文本、键盘（需 feature 构建） |
 | Linux | AT-SPI（可选） | 可见文本；Wayland 不支持全局键盘钩子 |
 

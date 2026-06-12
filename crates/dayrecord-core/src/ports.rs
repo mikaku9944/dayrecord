@@ -1,4 +1,4 @@
-use crate::models::{Activity, ActivityAgg, DayStats, Fact, Session, Summary};
+use crate::models::{Activity, ActivityAgg, DayStats, Fact, FlowEvent, Session, Summary, TaskUnit};
 use chrono::{DateTime, Utc};
 use std::error::Error;
 
@@ -67,6 +67,13 @@ pub trait Repository: Send + Sync {
     fn list_all_facts(&self) -> Result<Vec<Fact>, Box<dyn Error + Send + Sync>>;
     fn search_facts(&self, query: &str, limit: usize) -> Result<Vec<Fact>, Box<dyn Error + Send + Sync>>;
     fn delete_fact(&self, id: i64) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    fn insert_flow_event(&self, event: &FlowEvent) -> Result<i64, Box<dyn Error + Send + Sync>>;
+    fn list_flow_events_for_day(&self, day: &str) -> Result<Vec<FlowEvent>, Box<dyn Error + Send + Sync>>;
+
+    fn replace_task_units_for_day(&self, day: &str, units: &[TaskUnit]) -> Result<(), Box<dyn Error + Send + Sync>>;
+    fn list_task_units_for_day(&self, day: &str) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>>;
+    fn list_task_units_recent(&self, days: u32) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>>;
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +114,8 @@ pub struct InMemoryRepository {
     pub summaries: std::sync::Mutex<Vec<Summary>>,
     pub settings: std::sync::Mutex<std::collections::HashMap<String, String>>,
     pub facts: std::sync::Mutex<Vec<Fact>>,
+    pub flow_events: std::sync::Mutex<Vec<FlowEvent>>,
+    pub task_units: std::sync::Mutex<Vec<TaskUnit>>,
 }
 
 impl Repository for InMemoryRepository {
@@ -243,6 +252,8 @@ impl Repository for InMemoryRepository {
         self.activities.lock().unwrap().clear();
         self.summaries.lock().unwrap().clear();
         self.facts.lock().unwrap().clear();
+        self.flow_events.lock().unwrap().clear();
+        self.task_units.lock().unwrap().clear();
         let consent = self.get_setting("consent")?;
         self.settings.lock().unwrap().clear();
         if let Some(c) = consent {
@@ -354,5 +365,66 @@ impl Repository for InMemoryRepository {
     fn delete_fact(&self, id: i64) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.facts.lock().unwrap().retain(|f| f.id != Some(id));
         Ok(())
+    }
+
+    fn insert_flow_event(&self, event: &FlowEvent) -> Result<i64, Box<dyn Error + Send + Sync>> {
+        let mut events = self.flow_events.lock().unwrap();
+        let id = events.len() as i64 + 1;
+        let mut e = event.clone();
+        e.id = Some(id);
+        events.push(e);
+        Ok(id)
+    }
+
+    fn list_flow_events_for_day(&self, day: &str) -> Result<Vec<FlowEvent>, Box<dyn Error + Send + Sync>> {
+        Ok(self
+            .flow_events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.day == day)
+            .cloned()
+            .collect())
+    }
+
+    fn replace_task_units_for_day(&self, day: &str, units: &[TaskUnit]) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let mut all = self.task_units.lock().unwrap();
+        all.retain(|u| u.day != day);
+        for (i, unit) in units.iter().enumerate() {
+            let mut u = unit.clone();
+            u.id = Some(all.len() as i64 + i as i64 + 1);
+            all.push(u);
+        }
+        Ok(())
+    }
+
+    fn list_task_units_for_day(&self, day: &str) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>> {
+        let mut units: Vec<TaskUnit> = self
+            .task_units
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|u| u.day == day)
+            .cloned()
+            .collect();
+        units.sort_by_key(|u| u.started_at);
+        Ok(units)
+    }
+
+    fn list_task_units_recent(&self, days: u32) -> Result<Vec<TaskUnit>, Box<dyn Error + Send + Sync>> {
+        let end = chrono::Local::now().date_naive();
+        let from = (end - chrono::Duration::days(days.saturating_sub(1) as i64))
+            .format("%Y-%m-%d")
+            .to_string();
+        let mut units: Vec<TaskUnit> = self
+            .task_units
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|u| u.day.as_str() >= from.as_str())
+            .cloned()
+            .collect();
+        units.sort_by_key(|u| u.started_at);
+        Ok(units)
     }
 }

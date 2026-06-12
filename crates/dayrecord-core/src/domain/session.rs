@@ -15,6 +15,7 @@ pub struct SessionBuilder {
     pub started_at: Option<DateTime<Utc>>,
     pub last_activity_at: Option<DateTime<Utc>>,
     pub uia_text: Option<String>,
+    pub backspace_count: u32,
 }
 
 impl SessionBuilder {
@@ -27,6 +28,7 @@ impl SessionBuilder {
             started_at: None,
             last_activity_at: None,
             uia_text: None,
+            backspace_count: 0,
         }
     }
 
@@ -60,15 +62,22 @@ impl SessionBuilder {
             if (now - last).num_seconds() >= SESSION_IDLE_SECS {
                 let flushed = self.flush(clock, now);
                 self.started_at = Some(now);
+                if matches!(event.kind, KeyEventKind::Backspace) {
+                    self.backspace_count = self.backspace_count.saturating_add(1);
+                }
                 apply_key_event(&mut self.buffer, &event.kind);
                 self.last_activity_at = Some(now);
                 return flushed;
             }
         }
 
-        if matches!(event.kind, KeyEventKind::Paste) {
+        if matches!(event.kind, KeyEventKind::Paste | KeyEventKind::Copy) {
             self.last_activity_at = Some(now);
             return None;
+        }
+
+        if matches!(event.kind, KeyEventKind::Backspace) {
+            self.backspace_count = self.backspace_count.saturating_add(1);
         }
 
         apply_key_event(&mut self.buffer, &event.kind);
@@ -131,6 +140,7 @@ impl SessionBuilder {
             content: std::mem::take(&mut self.buffer),
             has_paste: self.has_paste,
             uia_text: self.uia_text.take(),
+            backspace_count: self.backspace_count,
         };
         self.reset_state();
         Some(session)
@@ -142,6 +152,7 @@ impl SessionBuilder {
         self.started_at = None;
         self.last_activity_at = None;
         self.uia_text = None;
+        self.backspace_count = 0;
     }
 }
 
@@ -218,6 +229,33 @@ mod tests {
         let flushed = builder.on_window_change(&clock, "b.exe", "B", clock.now());
         assert!(flushed.is_some());
         assert_eq!(builder.app_name, "b.exe");
+    }
+
+    #[test]
+    fn backspace_count_accumulates() {
+        let mut builder = SessionBuilder::new("app", "win");
+        let clock = clock_at(0);
+        for ch in ['a', 'b', 'c'] {
+            builder.on_key(
+                &clock,
+                &KeyEvent {
+                    at: clock.now(),
+                    kind: KeyEventKind::Char(ch),
+                },
+            );
+        }
+        for _ in 0..2 {
+            builder.on_key(
+                &clock,
+                &KeyEvent {
+                    at: clock.now(),
+                    kind: KeyEventKind::Backspace,
+                },
+            );
+        }
+        let session = builder.flush(&clock, clock.now()).unwrap();
+        assert_eq!(session.backspace_count, 2);
+        assert_eq!(session.content, "a");
     }
 
     #[test]

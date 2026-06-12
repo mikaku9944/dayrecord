@@ -44,6 +44,7 @@ pub mod win {
             x if x == VK_RETURN.0 as u16 => Some(KeyEventKind::Enter),
             x if x == VK_BACK.0 as u16 => Some(KeyEventKind::Backspace),
             x if x == VK_TAB.0 as u16 => Some(KeyEventKind::Tab),
+            0x43 if ctrl_down() => Some(KeyEventKind::Copy),
             0x56 if ctrl_down() => Some(KeyEventKind::Paste),
             0x41..=0x5A => Some(KeyEventKind::Char((vk as u8 + 32) as char)),
             0x30..=0x39 => Some(KeyEventKind::Char(vk as u8 as char)),

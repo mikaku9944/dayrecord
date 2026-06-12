@@ -14,6 +14,9 @@ pub struct Session {
     /// Screenshot-free on-screen text captured via UIA at flush time (optional).
     #[serde(default)]
     pub uia_text: Option<String>,
+    /// Backspace key presses accumulated in this session.
+    #[serde(default)]
+    pub backspace_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +56,7 @@ pub enum FactCategory {
     Preference,
     Topic,
     Schedule,
+    Routine,
 }
 
 impl FactCategory {
@@ -63,6 +67,7 @@ impl FactCategory {
             Self::Preference => "preference",
             Self::Topic => "topic",
             Self::Schedule => "schedule",
+            Self::Routine => "routine",
         }
     }
 
@@ -73,6 +78,7 @@ impl FactCategory {
             "preference" => Some(Self::Preference),
             "topic" => Some(Self::Topic),
             "schedule" => Some(Self::Schedule),
+            "routine" => Some(Self::Routine),
             _ => None,
         }
     }
@@ -126,7 +132,57 @@ pub enum KeyEventKind {
     Backspace,
     Tab,
     Paste,
+    Copy,
     ImeComposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FlowEventKind {
+    Copy,
+    Paste,
+}
+
+impl FlowEventKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Paste => "paste",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "copy" => Some(Self::Copy),
+            "paste" => Some(Self::Paste),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlowEvent {
+    pub id: Option<i64>,
+    pub day: String,
+    pub at: DateTime<Utc>,
+    pub kind: FlowEventKind,
+    pub app_name: String,
+    pub window_title: String,
+    pub content_preview: String,
+    pub char_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskUnit {
+    pub id: Option<i64>,
+    pub day: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: DateTime<Utc>,
+    pub name: String,
+    pub goal_guess: String,
+    pub app_chain: String,
+    pub hesitation_score: f32,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

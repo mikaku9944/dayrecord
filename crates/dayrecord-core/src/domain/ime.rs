@@ -31,7 +31,7 @@ pub fn apply_key_event(buffer: &mut String, kind: &KeyEventKind) -> Option<Strin
             buffer.push('\t');
             None
         }
-        KeyEventKind::Paste => None,
+        KeyEventKind::Paste | KeyEventKind::Copy => None,
         KeyEventKind::ImeComposition => None,
     }
 }
