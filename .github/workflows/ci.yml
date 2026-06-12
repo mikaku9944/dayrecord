@@ -33,6 +33,13 @@ jobs:
         run: cargo clippy -p dayrecord-core -p dayrecord-adapters -p dayrecord-runtime -p dayrecord-cli --all-targets -- -D warnings
       - name: cargo test
         run: cargo test -p dayrecord-core -p dayrecord-adapters -p dayrecord-runtime -p dayrecord-cli --lib
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev libsecret-1-dev pkg-config \
+            libxcb-ewmh-dev libxcb-randr0-dev libdbus-1-dev
       - name: cargo build CLI
         run: cargo build -p dayrecord-cli
       - name: cargo build app (Windows only)

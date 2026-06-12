@@ -52,7 +52,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev libsecret-1-dev pkg-config
+          sudo apt-get install -y \
+            libssl-dev libsecret-1-dev pkg-config \
+            libxcb-ewmh-dev libxcb-randr0-dev libdbus-1-dev
 
       - name: Build release CLI
         run: cargo build --release -p dayrecord-cli --target ${{ matrix.target }}
@@ -130,6 +132,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: [build-cli, build-windows-gui]
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,12 +146,17 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          find . -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.msi" -o -name "*.exe" \) -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > SHA256SUMS.txt
+          shopt -s globstar nullglob
+          files=(**/*.zip **/*.tar.gz **/*.msi **/*.exe)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release artifacts were uploaded."
+            exit 1
+          fi
+          printf '%s\0' "${files[@]}" | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
