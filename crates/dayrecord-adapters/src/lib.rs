@@ -6,6 +6,8 @@ pub mod keyboard_hook;
 pub mod keyboard_capture;
 #[cfg(target_os = "macos")]
 pub mod keyboard_macos;
+#[cfg(all(target_os = "macos", feature = "macos-keyboard"))]
+pub mod keyboard_macos_impl;
 #[cfg(target_os = "linux")]
 pub mod keyboard_linux;
 pub mod llm;
@@ -13,6 +15,7 @@ pub mod platform;
 pub mod repository;
 pub mod secret;
 pub mod secret_keyring;
+pub mod uia_common;
 pub mod window_unified;
 #[cfg(windows)]
 pub mod uia;
@@ -20,6 +23,8 @@ pub mod uia;
 pub mod window;
 #[cfg(target_os = "macos")]
 pub mod context_macos;
+#[cfg(all(target_os = "macos", feature = "macos-ax"))]
+pub mod context_ax;
 #[cfg(target_os = "linux")]
 pub mod context_linux;
 

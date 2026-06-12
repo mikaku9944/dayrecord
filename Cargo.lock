@@ -864,6 +864,8 @@ dependencies = [
  "arboard",
  "async-trait",
  "chrono",
+ "core-foundation 0.9.4",
+ "core-graphics 0.23.2",
  "dayrecord-core",
  "keyring",
  "reqwest 0.12.28",

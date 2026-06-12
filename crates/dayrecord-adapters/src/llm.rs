@@ -30,6 +30,13 @@ impl DeepSeekClient {
         self.base_url = base_url.into();
         self
     }
+
+    /// Returns `true` if an API key has been configured.
+    /// Callers can check this before attempting LLM operations to avoid
+    /// any network activity when no key is set.
+    pub fn has_api_key(&self) -> bool {
+        !self.api_key.trim().is_empty()
+    }
 }
 
 #[derive(Serialize)]
@@ -62,6 +69,17 @@ struct ChatChoiceMessage {
 
 impl LlmClient for DeepSeekClient {
     fn complete(&self, system: &str, user: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+        // ── Guard: no API key → no network activity at all ──────────────
+        // Even an invalid key could leak data via the HTTP request body.
+        // We bail out before constructing the request or touching the network.
+        if self.api_key.trim().is_empty() {
+            return Err(
+                "DeepSeek API key not configured. \
+                 Set it in the app settings or via `dayrecord` before generating summaries."
+                    .into(),
+            );
+        }
+
         let body = ChatRequest {
             model: DEEPSEEK_MODEL,
             messages: vec![
@@ -105,6 +123,33 @@ mod tests {
     use super::*;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn empty_api_key_blocks_network() {
+        // No API key → complete() must return Err without touching the network.
+        let client = DeepSeekClient::new("");
+        assert!(!client.has_api_key());
+        let result = client.complete("system prompt with sensitive data", "user data");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("API key not configured"),
+            "unexpected error: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn whitespace_only_api_key_blocks_network() {
+        let client = DeepSeekClient::new("   ");
+        assert!(!client.has_api_key());
+        assert!(client.complete("sys", "user").is_err());
+    }
+
+    #[test]
+    fn has_api_key_true_when_set() {
+        let client = DeepSeekClient::new("sk-test-key-123");
+        assert!(client.has_api_key());
+    }
 
     #[test]
     fn sends_expected_payload() {

@@ -16,6 +16,7 @@ pub struct AppStatus {
     pub recording: bool,
     pub consent: bool,
     pub has_api_key: bool,
+    pub local_only: bool,
     pub day: String,
     pub stats: DayStats,
 }
@@ -32,10 +33,18 @@ pub fn get_status(state: State<'_, AppState>) -> Result<AppStatus, String> {
         .map_err(|e| e.to_string())?
         .map(|v| v == "true")
         .unwrap_or(false);
+    let local_only = state
+        .orchestrator
+        .repo
+        .get_setting("local_only")
+        .map_err(|e| e.to_string())?
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
     Ok(AppStatus {
         recording: state.orchestrator.is_recording(),
         consent,
         has_api_key: load_api_key(&store).is_some(),
+        local_only,
         day,
         stats,
     })
@@ -186,6 +195,20 @@ pub fn set_auto_export(enabled: bool, state: State<'_, AppState>) -> Result<(), 
         .orchestrator
         .repo
         .set_setting("auto_export", if enabled { "1" } else { "0" })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_local_only(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.orchestrator.is_local_only())
+}
+
+#[tauri::command]
+pub fn set_local_only(enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .orchestrator
+        .repo
+        .set_setting("local_only", if enabled { "true" } else { "false" })
         .map_err(|e| e.to_string())
 }
 

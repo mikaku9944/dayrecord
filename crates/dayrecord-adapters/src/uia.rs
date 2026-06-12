@@ -10,19 +10,19 @@
 //! Chromium-embedded / Canvas / game UIs expose little or no UIA text. In those
 //! cases we fall back to whatever focus/URL we can read; the window title from the
 //! activity timeline remains the backstop signal.
+//!
+//! Platform-independent helpers (constants, snapshot composition, URL heuristics)
+//! live in `uia_common.rs` and are shared with the macOS AX adapter.
 
-const MAX_UIA_CHARS: usize = 4000;
-/// Per-window collected text budget before we stop walking the tree.
-const MAX_WINDOW_TEXT_CHARS: usize = 3500;
-/// Hard cap on tree nodes visited per sample (protects the 2s budget).
-const MAX_NODES: usize = 800;
-/// Avoid pathological sibling lists (e.g. huge virtualized grids).
-const MAX_CHILDREN_PER_NODE: usize = 200;
-const UIA_POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+use crate::uia_common::{
+    looks_like_url, compose_snapshot, push_unique_text,
+    MAX_CHILDREN_PER_NODE, MAX_NODES, MAX_WINDOW_TEXT_CHARS, UIA_POLL_TIMEOUT,
+};
 
 #[cfg(windows)]
 mod platform {
     use super::{MAX_CHILDREN_PER_NODE, MAX_NODES, MAX_WINDOW_TEXT_CHARS};
+    use crate::uia_common::{looks_like_url, push_unique_text};
     use windows::core::Interface;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
@@ -54,7 +54,7 @@ mod platform {
 
             let (window_text, url) = read_window_context(&automation);
 
-            super::compose_snapshot(focus, window_text, url)
+            compose_snapshot(focus, window_text, url)
         }
     }
 
@@ -107,7 +107,7 @@ mod platform {
 
                 if url.is_none() && ct == UIA_EditControlTypeId {
                     if let Some(value) = read_value_pattern(&node) {
-                        if super::looks_like_url(&value) {
+                        if looks_like_url(&value) {
                             url = Some(value.trim().to_string());
                         }
                     }
@@ -135,19 +135,6 @@ mod platform {
             Some(texts.join("\n"))
         };
         (window_text, url)
-    }
-
-    fn push_unique_text(texts: &mut Vec<String>, total_chars: &mut usize, raw: String) {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() || is_chrome_noise(trimmed) {
-            return;
-        }
-        let clipped: String = trimmed.chars().take(MAX_WINDOW_TEXT_CHARS).collect();
-        if texts.iter().any(|t| t == &clipped || t.contains(&clipped) || clipped.contains(t)) {
-            return;
-        }
-        *total_chars += clipped.chars().count();
-        texts.push(clipped);
     }
 
     /// TextPattern first, then Name (common for Chromium headings/links), then Value on edits.
@@ -183,24 +170,6 @@ mod platform {
         None
     }
 
-    fn is_chrome_noise(s: &str) -> bool {
-        matches!(
-            s,
-            "Back"
-                | "Forward"
-                | "Reload"
-                | "Home"
-                | "Chrome"
-                | "Microsoft Edge"
-                | "Address and search bar"
-                | "Search tabs"
-                | "Minimize"
-                | "Maximize"
-                | "Close"
-                | "Restore"
-        )
-    }
-
     unsafe fn read_text_pattern(element: &IUIAutomationElement) -> Option<String> {
         let pattern = element.GetCurrentPattern(UIA_TextPatternId).ok()?;
         let text_pattern: IUIAutomationTextPattern = pattern.cast().ok()?;
@@ -224,71 +193,6 @@ mod platform {
             Some(s)
         }
     }
-}
-
-/// Heuristic: does this edit-box value look like a browser address / URL?
-fn looks_like_url(value: &str) -> bool {
-    let t = value.trim();
-    if t.is_empty() || t.len() > 1024 || t.chars().any(char::is_whitespace) {
-        return false;
-    }
-    if t.starts_with("http://") || t.starts_with("https://") || t.contains("://") {
-        return true;
-    }
-    let has_alpha = t.chars().any(|c| c.is_ascii_alphabetic());
-    if !has_alpha || !t.contains('.') {
-        return false;
-    }
-    if t.contains('/') {
-        return true;
-    }
-    // bare domain like example.com — last label looks like a TLD
-    t.rsplit('.')
-        .next()
-        .map(|tld| tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()))
-        .unwrap_or(false)
-}
-
-fn truncate_text(text: String) -> String {
-    if text.chars().count() <= MAX_UIA_CHARS {
-        return text;
-    }
-    let truncated: String = text.chars().take(MAX_UIA_CHARS.saturating_sub(1)).collect();
-    format!("{truncated}…")
-}
-
-/// Combine focus text, surrounding window text, and URL into one labeled snapshot.
-/// Drops the focus block when it's already contained in the window text (dedup).
-fn compose_snapshot(
-    focus: Option<String>,
-    window_text: Option<String>,
-    url: Option<String>,
-) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-
-    if let Some(u) = url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        parts.push(format!("[网址] {u}"));
-    }
-
-    let focus_t = focus.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let window_t = window_text.as_deref().map(str::trim).filter(|s| !s.is_empty());
-
-    match (focus_t, window_t) {
-        (Some(f), Some(w)) => {
-            if !w.contains(f) {
-                parts.push(format!("[焦点] {f}"));
-            }
-            parts.push(format!("[可见内容] {w}"));
-        }
-        (Some(f), None) => parts.push(format!("[焦点] {f}")),
-        (None, Some(w)) => parts.push(format!("[可见内容] {w}")),
-        (None, None) => {}
-    }
-
-    if parts.is_empty() {
-        return None;
-    }
-    Some(truncate_text(parts.join("\n")))
 }
 
 /// Poll focused/visible on-screen text on a short-lived thread with a hard timeout
@@ -315,7 +219,7 @@ pub fn poll_focused_text() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::uia_common::*;
 
     #[test]
     fn url_heuristic_accepts_common_forms() {

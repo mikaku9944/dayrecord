@@ -43,6 +43,13 @@ enum Commands {
         #[arg(long)]
         accept: bool,
     },
+    /// Enable or disable local-only mode (blocks all network calls including LLM)
+    LocalOnly {
+        #[arg(long)]
+        enable: bool,
+        #[arg(long)]
+        disable: bool,
+    },
     /// Print data directory path
     DataDir,
 }
@@ -97,10 +104,17 @@ async fn main() -> Result<()> {
                 .get_setting("recording")
                 .map_err(|e| anyhow::anyhow!("{e}"))?
                 .unwrap_or_else(|| "true".into());
+            let local_only = rt
+                .repo()
+                .get_setting("local_only")
+                .map_err(|e| anyhow::anyhow!("{e}"))?
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
             println!(
-                "{{\"consent\":{},\"recording\":{}}}",
+                "{{\"consent\":{},\"recording\":{},\"local_only\":{}}}",
                 consent == "true",
-                recording != "false"
+                recording != "false",
+                local_only
             );
         }
         Commands::Consent { accept } => {
@@ -108,6 +122,31 @@ async fn main() -> Result<()> {
                 .set_setting("consent", if accept { "true" } else { "false" })
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("consent={accept}");
+        }
+        Commands::LocalOnly { enable, disable } => {
+            if enable && disable {
+                anyhow::bail!("cannot use --enable and --disable at the same time");
+            }
+            if !enable && !disable {
+                // Show current state
+                let current = rt
+                    .repo()
+                    .get_setting("local_only")
+                    .map_err(|e| anyhow::anyhow!("{e}"))?
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false);
+                println!("local_only={current}");
+            } else {
+                let on = enable;
+                rt.repo()
+                    .set_setting("local_only", if on { "true" } else { "false" })
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                if on {
+                    println!("local_only=true — all network calls (LLM summaries, fact extraction) are now blocked.");
+                } else {
+                    println!("local_only=false — network calls are allowed.");
+                }
+            }
         }
         Commands::DataDir => {
             println!("{}", dayrecord_core::paths::data_dir().display());
