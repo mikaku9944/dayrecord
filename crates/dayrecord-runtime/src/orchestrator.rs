@@ -153,7 +153,26 @@ where
         Ok(())
     }
 
+    /// Returns `true` if local-only mode is enabled, meaning all network
+    /// activity (LLM calls for summaries / fact extraction) is blocked.
+    pub fn is_local_only(&self) -> bool {
+        self.repo
+            .get_setting("local_only")
+            .ok()
+            .flatten()
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false)
+    }
+
     pub fn generate_summary(&self, day: &str) -> Result<Summary, Box<dyn Error + Send + Sync>> {
+        // ── Guard: local-only mode blocks all network activity ──────────
+        if self.is_local_only() {
+            return Err(
+                "local_only mode is enabled — network calls are disabled. \
+                 Run `dayrecord local-only --disable` to allow LLM requests."
+                    .into(),
+            );
+        }
         self.flush_pending()?;
         let activities = self.repo.activity_agg_for_day(day)?;
         let sessions = self.repo.list_sessions_for_day(day)?;
@@ -171,6 +190,14 @@ where
     }
 
     pub fn extract_facts(&self, day: &str) -> Result<usize, Box<dyn Error + Send + Sync>> {
+        // ── Guard: local-only mode blocks all network activity ──────────
+        if self.is_local_only() {
+            return Err(
+                "local_only mode is enabled — network calls are disabled. \
+                 Run `dayrecord local-only --disable` to allow LLM requests."
+                    .into(),
+            );
+        }
         self.flush_pending()?;
         let activities = self.repo.activity_agg_for_day(day)?;
         let sessions = self.repo.list_sessions_for_day(day)?;
@@ -325,5 +352,97 @@ mod tests {
         .unwrap();
         let summary = orch.generate_summary("2026-06-10").unwrap();
         assert!(summary.content.contains("今日概览"));
+    }
+
+    #[test]
+    fn local_only_blocks_generate_summary() {
+        let (clock, repo, _) = make_orch();
+        repo.insert_session(&Session {
+            id: None,
+            day: "2026-06-10".into(),
+            started_at: clock.now(),
+            ended_at: clock.now(),
+            app_name: "app".into(),
+            window_title: "w".into(),
+            content: "work".into(),
+            has_paste: false,
+            uia_text: None,
+        })
+        .unwrap();
+        repo.set_setting("local_only", "true").unwrap();
+        let orch = Orchestrator::new(
+            clock,
+            repo,
+            Arc::new(MockLlm),
+            Arc::new(MockWindow),
+            Arc::new(MockClip),
+            Arc::new(NullContextSampler),
+        );
+        assert!(orch.is_local_only());
+        let err = orch.generate_summary("2026-06-10").unwrap_err();
+        assert!(
+            err.to_string().contains("local_only"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn local_only_blocks_extract_facts() {
+        let (clock, repo, _) = make_orch();
+        repo.insert_session(&Session {
+            id: None,
+            day: "2026-06-10".into(),
+            started_at: clock.now(),
+            ended_at: clock.now(),
+            app_name: "app".into(),
+            window_title: "w".into(),
+            content: "work".into(),
+            has_paste: false,
+            uia_text: None,
+        })
+        .unwrap();
+        repo.set_setting("local_only", "true").unwrap();
+        let orch = Orchestrator::new(
+            clock,
+            repo,
+            Arc::new(ExtractLlm),
+            Arc::new(MockWindow),
+            Arc::new(MockClip),
+            Arc::new(NullContextSampler),
+        );
+        let err = orch.extract_facts("2026-06-10").unwrap_err();
+        assert!(
+            err.to_string().contains("local_only"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn local_only_false_allows_llm() {
+        let (clock, repo, _) = make_orch();
+        repo.insert_session(&Session {
+            id: None,
+            day: "2026-06-10".into(),
+            started_at: clock.now(),
+            ended_at: clock.now(),
+            app_name: "app".into(),
+            window_title: "w".into(),
+            content: "work".into(),
+            has_paste: false,
+            uia_text: None,
+        })
+        .unwrap();
+        repo.set_setting("local_only", "false").unwrap();
+        let orch = Orchestrator::new(
+            clock,
+            repo,
+            Arc::new(MockLlm),
+            Arc::new(MockWindow),
+            Arc::new(MockClip),
+            Arc::new(NullContextSampler),
+        );
+        assert!(!orch.is_local_only());
+        // Should succeed (MockLlm returns valid summary)
+        assert!(orch.generate_summary("2026-06-10").is_ok());
     }
 }

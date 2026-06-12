@@ -8,9 +8,9 @@ pub use orchestrator::Orchestrator;
 
 use commands::{
     clear_all_data, consolidate_facts, delete_fact, export_hermes_memory, extract_facts,
-    generate_summary, get_auto_export, get_habit_profile, get_hermes_export_dir, get_status,
-    get_summary, list_facts, set_api_key, set_auto_export, set_consent, set_hermes_export_dir,
-    set_recording,
+    generate_summary, get_auto_export, get_habit_profile, get_hermes_export_dir, get_local_only,
+    get_status, get_summary, list_facts, set_api_key, set_auto_export, set_consent,
+    set_hermes_export_dir, set_local_only, set_recording,
 };
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -73,7 +73,7 @@ pub fn run() {
                 }
             });
 
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             {
                 use std::sync::mpsc;
                 let (tx, rx) = mpsc::channel();
@@ -109,6 +109,8 @@ pub fn run() {
             set_hermes_export_dir,
             get_auto_export,
             set_auto_export,
+            get_local_only,
+            set_local_only,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

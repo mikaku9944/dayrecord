@@ -11,8 +11,8 @@ homepage.workspace = true
 default = []
 linux-x11-keyboard = []
 linux-atspi = []
-macos-keyboard = []
-macos-ax = []
+macos-keyboard = ["dep:core-graphics", "dep:core-foundation"]
+macos-ax = ["dep:core-foundation"]
 
 [dependencies]
 dayrecord-core = { path = "../dayrecord-core" }
@@ -41,6 +41,10 @@ windows = { version = "0.58", features = [
     "Win32_Security_Cryptography",
     "Win32_System_Memory",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = { version = "0.23", optional = true }
+core-foundation = { version = "0.9", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
