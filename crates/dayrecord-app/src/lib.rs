@@ -9,8 +9,9 @@ pub use orchestrator::Orchestrator;
 use commands::{
     clear_all_data, consolidate_facts, delete_fact, export_hermes_memory, extract_facts,
     generate_summary, get_auto_export, get_habit_profile, get_hermes_export_dir, get_status,
-    get_summary, list_facts, set_api_key, set_auto_export, set_consent, set_hermes_export_dir,
-    set_recording,
+    get_summary, is_job_busy, list_facts, list_task_units, set_api_key, set_auto_export,
+    set_consent, set_hermes_export_dir, set_recording, start_extract_insights,
+    start_generate_summary,
 };
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -97,12 +98,16 @@ pub fn run() {
             set_consent,
             set_api_key,
             generate_summary,
+            start_generate_summary,
             get_summary,
             clear_all_data,
             list_facts,
+            list_task_units,
             delete_fact,
             consolidate_facts,
             extract_facts,
+            start_extract_insights,
+            is_job_busy,
             get_habit_profile,
             export_hermes_memory,
             get_hermes_export_dir,
