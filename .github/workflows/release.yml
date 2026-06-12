@@ -108,11 +108,9 @@ jobs:
         shell: pwsh
         run: ./scripts/generate-icons.ps1
 
-      - name: Build frontend
+      - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --force

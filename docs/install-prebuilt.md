@@ -33,7 +33,9 @@ dayrecord --help
 
 ## Windows 桌面 GUI
 
-1. 下载 Release 中的 `.msi` 安装包（名称类似 `DayRecord_<version>_x64-setup.msi`）
+从 **v0.1.1** 起提供 `.msi` 安装包（v0.1.0 仅含 CLI）。
+
+1. 下载 Release 中的 `.msi`（名称类似 `DayRecord_<version>_x64-setup.msi`）
 2. 安装后从开始菜单启动 DayRecord
 3. 若 SmartScreen 提示未知发布者，选择「仍要运行」（未签名构建的正常现象）
 
