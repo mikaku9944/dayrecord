@@ -1,0 +1,21 @@
+# DayRecord 已知限制
+
+## 采集
+
+- **中文 IME**：`VK_PROCESSKEY` 合成键已过滤；上屏中文不完整，依赖 UIA 可见文本、窗口标题与粘贴片段补上下文。
+- **UIA 盲区**：部分 Electron / Chromium 嵌入 / Canvas / 游戏类应用暴露的 UIA 文本较少；此时回落到焦点文本、URL 与窗口标题，不伪造内容。
+- **非键盘工作**：开会、阅读、思考等无键盘活动，主要靠 UIA 可见文本与应用时间轴体现。
+- **光标移动**：方向键/鼠标改光标时，文本顺序可能错乱。
+
+## 平台与安全
+
+- **Windows**：完整能力（UIA + 键盘钩子）。
+- **macOS**：窗口采集完整；AX 文本与键盘需系统授权及 `--features macos-ax,macos-keyboard` 构建。
+- **Linux**：窗口 + 剪贴板；AT-SPI 与 X11 键盘为可选 feature；**Wayland 不支持全局键盘钩子**。
+- **杀软误报**：全局钩子可能被标记；生产分发建议 **代码签名** 与透明隐私说明。
+- **DeepSeek**：仅「生成复盘 / 巩固记忆」时发送当日摘要；原始 keystroke 默认不上云。
+
+## 记忆进化（M8）
+
+- consolidation 为 **确定性 + DeepSeek 抽取**，非 RL；错误 fact 需用户在 UI 删除或编辑。
+- `confidence` 与 `source_session_ids` 用于溯源，不保证 100% 准确。

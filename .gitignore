@@ -1,0 +1,16 @@
+/target/
+**/target/
+node_modules/
+frontend/dist/
+*.db
+*.db-*
+*.secret
+.env
+.env.*
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo

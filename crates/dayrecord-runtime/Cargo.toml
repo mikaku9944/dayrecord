@@ -1,0 +1,15 @@
+[package]
+name = "dayrecord-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DayRecord capture orchestrator runtime"
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+dayrecord-core = { path = "../dayrecord-core" }
+chrono = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

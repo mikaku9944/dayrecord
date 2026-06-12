@@ -1,0 +1,18 @@
+{
+  "description": "Cross-platform personal work memory for AI agents — CLI, MCP, and file export. No screenshots.",
+  "topics": [
+    "rust",
+    "tauri",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "productivity",
+    "memory",
+    "deepseek",
+    "hermes",
+    "nanobot",
+    "openclaw",
+    "keyboard-hook",
+    "privacy"
+  ]
+}

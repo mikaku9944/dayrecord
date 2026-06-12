@@ -1,0 +1,26 @@
+[package]
+name = "dayrecord-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DayRecord CLI and MCP server for agent integrations"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "dayrecord"
+path = "src/main.rs"
+
+[dependencies]
+dayrecord-core = { path = "../dayrecord-core" }
+dayrecord-adapters = { path = "../dayrecord-adapters" }
+dayrecord-runtime = { path = "../dayrecord-runtime" }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { workspace = true }
+rmcp = { workspace = true }

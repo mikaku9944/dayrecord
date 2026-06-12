@@ -1,0 +1,21 @@
+[package]
+name = "dayrecord-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DayRecord domain logic: sessions, habits, facts, ContextBundle"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+directories = "5"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+insta = { workspace = true }
+tempfile = { workspace = true }

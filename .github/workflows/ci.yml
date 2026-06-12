@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Generate Tauri icons
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/generate-icons.ps1
+      - name: Generate Tauri icons (unix)
+        if: matrix.os != 'windows-latest'
+        run: pwsh ./scripts/generate-icons.ps1 || true
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy -p dayrecord-core -p dayrecord-adapters -p dayrecord-runtime -p dayrecord-cli --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test -p dayrecord-core -p dayrecord-adapters -p dayrecord-runtime -p dayrecord-cli --lib
+      - name: cargo build CLI
+        run: cargo build -p dayrecord-cli
+      - name: cargo build app (Windows only)
+        if: matrix.os == 'windows-latest'
+        run: cargo build -p dayrecord-app
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install
+      - run: npm test
+      - run: npm run typecheck

@@ -1,0 +1,27 @@
+{
+  "name": "dayrecord-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DayRecord Tauri frontend",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikaku9944/dayrecord.git",
+    "directory": "frontend"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}
