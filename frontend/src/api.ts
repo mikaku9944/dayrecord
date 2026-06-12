@@ -44,6 +44,31 @@ export interface HabitProfile {
   top_projects: [string, number][];
 }
 
+export interface TaskUnit {
+  id?: number;
+  day: string;
+  started_at: string;
+  ended_at: string;
+  name: string;
+  goal_guess: string;
+  app_chain: string;
+  hesitation_score: number;
+  confidence: number;
+}
+
+export interface SummaryJobResult {
+  ok: boolean;
+  summary?: Summary;
+  error?: string;
+  message?: string;
+}
+
+export interface InsightsJobResult {
+  ok: boolean;
+  factCount?: number;
+  error?: string;
+}
+
 export function factStatement(f: Fact): string {
   return `${f.subject} ${f.predicate} ${f.object}`;
 }
@@ -54,9 +79,13 @@ export const api = {
   setConsent: (accepted: boolean) => invoke<void>("set_consent", { accepted }),
   setApiKey: (key: string) => invoke<void>("set_api_key", { key }),
   generateSummary: (day?: string) => invoke<Summary>("generate_summary", { day }),
+  startGenerateSummary: (day?: string) => invoke<void>("start_generate_summary", { day }),
+  startExtractInsights: (day?: string) => invoke<void>("start_extract_insights", { day }),
+  isJobBusy: () => invoke<boolean>("is_job_busy"),
   getSummary: (day?: string) => invoke<Summary | null>("get_summary", { day }),
   clearAllData: () => invoke<void>("clear_all_data"),
   listFacts: () => invoke<Fact[]>("list_facts"),
+  listTaskUnits: (day?: string) => invoke<TaskUnit[]>("list_task_units", { day }),
   deleteFact: (id: number) => invoke<void>("delete_fact", { id }),
   extractFacts: (day?: string) => invoke<number>("extract_facts", { day }),
   consolidateFacts: (day?: string) => invoke<Fact[]>("consolidate_facts", { day }),

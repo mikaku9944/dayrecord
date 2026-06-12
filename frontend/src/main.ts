@@ -1,5 +1,13 @@
 import "./style.css";
-import { api, factStatement, type HabitProfile } from "./api";
+import { listen } from "@tauri-apps/api/event";
+import {
+  api,
+  factStatement,
+  type HabitProfile,
+  type InsightsJobResult,
+  type SummaryJobResult,
+  type TaskUnit,
+} from "./api";
 import { formatCount, formatDuration, recordingLabel } from "./format";
 import { renderMarkdownPreview } from "./markdown";
 
@@ -13,6 +21,7 @@ let state = {
   stats: { active_seconds: 0, session_count: 0, char_count: 0, pending_chars: 0 },
   summary: "",
   facts: [] as Awaited<ReturnType<typeof api.listFacts>>,
+  taskUnits: [] as TaskUnit[],
   habitProfile: null as HabitProfile | null,
   hermesExportDir: "",
   autoExport: false,
@@ -95,12 +104,81 @@ function factsKey(facts: typeof state.facts): string {
   return facts.map((f) => f.id).join(",");
 }
 
+function taskUnitsKey(units: TaskUnit[]): string {
+  return units.map((u) => u.id).join(",");
+}
+
+function isInsightCategory(category: string): boolean {
+  return category === "routine" || category === "schedule";
+}
+
+function formatAppChain(raw: string): string {
+  try {
+    const arr = JSON.parse(raw) as string[];
+    if (Array.isArray(arr)) return arr.join(" → ");
+  } catch {
+    /* fallback */
+  }
+  return raw;
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderFactList(facts: typeof state.facts): string {
+  if (facts.length === 0) {
+    return `<p class="empty-state">暂无</p>`;
+  }
+  return `<ul class="facts-list">
+    ${facts
+      .map(
+        (f) => `
+      <li class="fact-chip">
+        <span class="fact-tag">${esc(f.category)}</span>
+        <span class="fact-text">${esc(factStatement(f))}</span>
+        <button class="btn btn-ghost btn-icon" type="button" data-del="${f.id}" aria-label="删除事实">删</button>
+      </li>`,
+      )
+      .join("")}
+  </ul>`;
+}
+
+function renderTaskUnits(units: TaskUnit[]): string {
+  if (units.length === 0) {
+    return `<p class="empty-state">尚无任务单元。点击「抽取行为洞察」后按时段预分段并命名。</p>`;
+  }
+  return `<ul class="task-units-list">
+    ${units
+      .map(
+        (u) => `
+      <li class="task-unit-chip">
+        <div class="task-unit-head">
+          <span class="task-unit-name">${esc(u.name)}</span>
+          <span class="task-unit-time">${formatTime(u.started_at)}–${formatTime(u.ended_at)}</span>
+        </div>
+        <p class="task-unit-meta">${esc(formatAppChain(u.app_chain))}</p>
+        ${
+          u.goal_guess
+            ? `<p class="task-unit-goal">意图猜测：${esc(u.goal_guess)}</p>`
+            : ""
+        }
+        <p class="task-unit-scores">犹豫 ${Math.round(u.hesitation_score * 100)}% · 置信 ${Math.round(u.confidence * 100)}%</p>
+      </li>`,
+      )
+      .join("")}
+  </ul>`;
+}
+
 function needsFullRender(before: typeof state): boolean {
   return (
     before.consent !== state.consent ||
     before.hermesExpanded !== state.hermesExpanded ||
     before.summary !== state.summary ||
     factsKey(before.facts) !== factsKey(state.facts) ||
+    taskUnitsKey(before.taskUnits) !== taskUnitsKey(state.taskUnits) ||
     before.hermesExportDir !== state.hermesExportDir ||
     before.autoExport !== state.autoExport ||
     before.hasApiKey !== state.hasApiKey ||
@@ -180,7 +258,7 @@ function renderConsent(): string {
       <div class="consent-box sketch-card">
         <h2 id="consent-title" class="section-title">隐私说明</h2>
         <p>DayRecord 会在本机记录键盘输入、粘贴、前台窗口时间与界面可见文本（UIA，无截图），用于生成工作复盘与 Agent 记忆导出。</p>
-        <p>数据默认仅存本地；仅在您点击「生成今日复盘」或「抽取用户事实」时，将脱敏后的当日摘要发送至 DeepSeek API。</p>
+        <p>数据默认仅存本地；仅在您点击「生成今日复盘」或「抽取行为洞察」时，将脱敏后的当日摘要发送至 DeepSeek API。</p>
         <p>请仅在个人自有设备上使用，可随时暂停录制或清空全部数据。</p>
         <label class="consent-label">
           <input type="checkbox" id="consent-check" />
@@ -260,13 +338,13 @@ function renderHermesPanel(): string {
     ? `
       <p class="habit-summary">${esc(renderHabitSummary(state.habitProfile))}</p>
       <ol class="memory-steps" aria-label="Hermes 三步流程">
-        <li>抽取用户事实</li>
+        <li>抽取行为洞察</li>
         <li>导出 Hermes 记忆</li>
         <li>接入 Agent</li>
       </ol>
       <div class="action-strip">
         <button class="btn btn-secondary" id="extract-facts" type="button" ${state.extracting ? "disabled" : ""}>
-          ${state.extracting ? "抽取中…" : "抽取用户事实"}
+          ${state.extracting ? "抽取中…" : "抽取行为洞察"}
         </button>
         <button class="btn btn-secondary" id="export-hermes" type="button" ${state.exporting ? "disabled" : ""}>
           ${state.exporting ? "导出中…" : "导出 Hermes 记忆"}
@@ -284,22 +362,16 @@ function renderHermesPanel(): string {
         </div>
       </div>
       <div class="facts-area">
-        <h3 class="subsection-title">活跃事实</h3>
+        <h3 class="subsection-title">行为洞察 · 节律与重复</h3>
+        ${renderFactList(state.facts.filter((f) => isInsightCategory(f.category)))}
+        <h3 class="subsection-title">行为洞察 · 任务单元</h3>
+        ${renderTaskUnits(state.taskUnits)}
+        <h3 class="subsection-title">稳定事实</h3>
         ${
-          state.facts.length === 0
-            ? `<p class="empty-state">还没有抽取事实，先生成一次复盘或点击「抽取用户事实」</p>`
-            : `<ul class="facts-list">
-                ${state.facts
-                  .map(
-                    (f) => `
-                  <li class="fact-chip">
-                    <span class="fact-tag">${esc(f.category)}</span>
-                    <span class="fact-text">${esc(factStatement(f))}</span>
-                    <button class="btn btn-ghost btn-icon" type="button" data-del="${f.id}" aria-label="删除事实">删</button>
-                  </li>`,
-                  )
-                  .join("")}
-              </ul>`
+          state.facts.filter((f) => !isInsightCategory(f.category)).length === 0 &&
+          state.facts.filter((f) => isInsightCategory(f.category)).length === 0
+            ? `<p class="empty-state">还没有抽取洞察，先生成复盘或点击「抽取行为洞察」</p>`
+            : renderFactList(state.facts.filter((f) => !isInsightCategory(f.category)))
         }
       </div>`
     : "";
@@ -412,20 +484,17 @@ function bindEvents(): void {
     await refresh();
   });
 
-  document.getElementById("gen-summary")?.addEventListener("click", async () => {
+  document.getElementById("gen-summary")?.addEventListener("click", () => {
     state.loading = true;
     state.error = "";
-    state.message = "";
+    state.message = "复盘生成中，可继续浏览界面…";
     render();
-    try {
-      const s = await api.generateSummary();
-      state.summary = s.content;
-      state.message = "复盘已生成";
-    } catch (e) {
+    void api.startGenerateSummary().catch((e) => {
+      state.loading = false;
       state.error = String(e);
-    }
-    state.loading = false;
-    await refresh();
+      state.message = "";
+      render();
+    });
   });
 
   document.getElementById("save-key")?.addEventListener("click", async () => {
@@ -452,9 +521,12 @@ function bindEvents(): void {
 
   document.getElementById("toggle-hermes")?.addEventListener("click", async () => {
     state.hermesExpanded = !state.hermesExpanded;
-    if (state.hermesExpanded && !state.habitProfile) {
+    if (state.hermesExpanded) {
       try {
-        state.habitProfile = await api.getHabitProfile();
+        if (!state.habitProfile) {
+          state.habitProfile = await api.getHabitProfile();
+        }
+        state.taskUnits = await api.listTaskUnits(state.day || undefined);
       } catch {
         /* optional */
       }
@@ -462,20 +534,17 @@ function bindEvents(): void {
     render();
   });
 
-  document.getElementById("extract-facts")?.addEventListener("click", async () => {
+  document.getElementById("extract-facts")?.addEventListener("click", () => {
     state.extracting = true;
     state.error = "";
-    state.message = "";
+    state.message = "行为洞察抽取中，可继续浏览界面…";
     render();
-    try {
-      const n = await api.extractFacts();
-      state.facts = await api.listFacts();
-      state.message = `已抽取 ${n} 条事实`;
-    } catch (e) {
+    void api.startExtractInsights().catch((e) => {
+      state.extracting = false;
       state.error = String(e);
-    }
-    state.extracting = false;
-    render();
+      state.message = "";
+      render();
+    });
   });
 
   document.getElementById("export-hermes")?.addEventListener("click", async () => {
@@ -523,6 +592,7 @@ function bindEvents(): void {
     await api.clearAllData();
     state.summary = "";
     state.facts = [];
+    state.taskUnits = [];
     state.message = "";
     await refresh();
   });
@@ -541,6 +611,9 @@ async function refresh(): Promise<void> {
     const summary = await api.getSummary(status.day);
     if (summary) state.summary = summary.content;
     state.facts = await api.listFacts();
+    if (state.hermesExpanded) {
+      state.taskUnits = await api.listTaskUnits(status.day);
+    }
     state.hermesExportDir = await api.getHermesExportDir();
     state.autoExport = await api.getAutoExport();
     if (state.hermesExpanded) {
@@ -566,7 +639,39 @@ async function refresh(): Promise<void> {
   }
 }
 
+async function setupJobListeners(): Promise<void> {
+  await listen<SummaryJobResult>("generate-summary-finished", async (event) => {
+    state.loading = false;
+    const payload = event.payload;
+    if (payload.ok && payload.summary) {
+      state.summary = payload.summary.content;
+      state.message = payload.message ?? "复盘已生成";
+      state.error = "";
+    } else {
+      state.error = payload.error ?? "复盘生成失败";
+      state.message = "";
+    }
+    await refresh();
+  });
+
+  await listen<InsightsJobResult>("extract-insights-finished", async (event) => {
+    state.extracting = false;
+    const payload = event.payload;
+    if (payload.ok) {
+      state.facts = await api.listFacts();
+      state.taskUnits = await api.listTaskUnits(state.day);
+      state.message = `行为洞察已更新（稳定事实 ${payload.factCount ?? 0} 条）`;
+      state.error = "";
+    } else {
+      state.error = payload.error ?? "行为洞察抽取失败";
+      state.message = "";
+    }
+    render();
+  });
+}
+
 bindScrollGuards();
+void setupJobListeners();
 render();
 refresh();
 setInterval(refresh, 5000);

@@ -481,6 +481,52 @@ body {
   word-break: break-word;
 }
 
+.task-units-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.task-unit-chip {
+  padding: 10px 12px;
+  background: var(--paper-deep);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.task-unit-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.task-unit-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.task-unit-time {
+  font-size: 0.75rem;
+  color: var(--graphite-light);
+  white-space: nowrap;
+}
+
+.task-unit-meta,
+.task-unit-goal,
+.task-unit-scores {
+  margin: 4px 0 0;
+  color: var(--graphite);
+  font-size: 0.8rem;
+}
+
 .empty-state {
   margin: 0;
   font-size: 0.84rem;
