@@ -32,8 +32,14 @@ pub async fn run(_rt: AppRuntime) -> Result<()> {
         Arc::new(daemon_context_sampler()),
     ));
 
-    orch.set_recording(true);
-    let _ = orch.repo.set_setting("recording", "true");
+    let recording = orch
+        .repo
+        .get_setting("recording")
+        .ok()
+        .flatten()
+        .map(|v| v != "false")
+        .unwrap_or(true);
+    orch.set_recording(recording);
 
     let control = Arc::new(OrchestratorControlHandler {
         orchestrator: orch.clone(),
