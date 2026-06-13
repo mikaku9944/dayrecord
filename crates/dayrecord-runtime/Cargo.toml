@@ -10,6 +10,9 @@ homepage.workspace = true
 [dependencies]
 dayrecord-core = { path = "../dayrecord-core" }
 chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
