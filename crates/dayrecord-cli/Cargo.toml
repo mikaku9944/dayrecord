@@ -8,9 +8,17 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 
+[lib]
+name = "dayrecord_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "dayrecord"
 path = "src/main.rs"
+
+[[bin]]
+name = "dayrecord-mcp"
+path = "src/bin/dayrecord-mcp.rs"
 
 [dependencies]
 dayrecord-core = { path = "../dayrecord-core" }

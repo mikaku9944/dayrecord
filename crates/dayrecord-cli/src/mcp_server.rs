@@ -3,19 +3,24 @@
 use crate::mcp_handlers::{
     consolidate_memory, generate_today_summary, get_recording_status, get_recent_summary,
     get_today_context, get_user_profile, pause_recording, query_user_facts, read_resource,
-    resume_recording, what_working_on_now, URI_CONTEXT_TODAY, URI_FACTS,
-    URI_PROFILE,
+    recording_state_db, resume_recording, what_working_on_now, ConsolidateOutput, ControlAck,
+    MarkdownOutput, RecordingStatusOutput, URI_CONTEXT_TODAY, URI_FACTS, URI_PROFILE,
+    WorkingOnNow,
 };
+use crate::mcp_autostart::mcp_autostart_allowed;
+use crate::mcp_result::ToolFail;
 use crate::runtime::AppRuntime;
+use crate::version::VERSION;
 use anyhow::Result;
 use chrono::Utc;
 use dayrecord_adapters::SqliteRepository;
-use dayrecord_runtime::IpcControlClient;
+use dayrecord_core::context::ContextBundle;
+use dayrecord_runtime::{AutoStartControlClient, IpcControlClient};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
-    AnnotateAble, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
-    RawResource, RawResourceTemplate, ReadResourceRequestParams, ReadResourceResult,
-    ResourceContents, ServerCapabilities, ServerInfo,
+    AnnotateAble, Implementation, ListResourceTemplatesResult, ListResourcesResult,
+    PaginatedRequestParams, RawResource, RawResourceTemplate, ReadResourceRequestParams,
+    ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
 };
 use rmcp::schemars::{self, JsonSchema};
 use rmcp::service::RequestContext;
@@ -29,22 +34,11 @@ use rmcp::ServiceExt;
 use serde::Deserialize;
 use std::sync::Arc;
 
-#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
-struct JsonTextOutput {
-    /// Sanitized JSON payload
-    json: String,
-}
-
-#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
-struct TextOutput {
-    /// Markdown or plain-text payload
-    text: String,
-}
-
 #[derive(Clone)]
 pub struct DayRecordMcp {
     repo: Arc<SqliteRepository>,
-    control: Arc<IpcControlClient>,
+    control: Arc<AutoStartControlClient>,
+    control_readonly: Arc<IpcControlClient>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -76,88 +70,126 @@ fn platform() -> &'static str {
     std::env::consts::OS
 }
 
+fn db_recording(repo: &SqliteRepository) -> bool {
+    recording_state_db(repo).unwrap_or(false)
+}
+
 #[tool_router]
 impl DayRecordMcp {
-    #[tool(description = "Get the user's habit profile and active facts as JSON (sanitized, no raw keystrokes)")]
-    fn get_user_profile(&self) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: get_user_profile(&*self.repo, platform()),
-        })
+    #[tool(
+        description = "[Read-only] Get the user's habit profile and active facts (sanitized, no raw keystrokes)",
+        annotations(read_only_hint = true)
+    )]
+    fn get_user_profile(&self) -> Result<Json<ContextBundle>, ToolFail> {
+        get_user_profile(&*self.repo, platform())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Search active user facts by keyword (sanitized JSON)")]
+    #[tool(
+        description = "[Read-only] Search active user facts by keyword (sanitized JSON)",
+        annotations(read_only_hint = true)
+    )]
     fn query_user_facts(
         &self,
         Parameters(QueryFactsParams { query }): Parameters<QueryFactsParams>,
-    ) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: query_user_facts(&*self.repo, query, platform()),
-        })
+    ) -> Result<Json<ContextBundle>, ToolFail> {
+        query_user_facts(&*self.repo, query, platform())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Get recent daily work summaries as sanitized Markdown")]
+    #[tool(
+        description = "[Read-only] Get recent daily work summaries as sanitized Markdown",
+        annotations(read_only_hint = true)
+    )]
     fn get_recent_summary(
         &self,
         Parameters(RecentSummaryParams { days }): Parameters<RecentSummaryParams>,
-    ) -> Json<TextOutput> {
-        Json(TextOutput {
-            text: get_recent_summary(&*self.repo, days, platform()),
-        })
+    ) -> Result<Json<MarkdownOutput>, ToolFail> {
+        get_recent_summary(&*self.repo, days, platform())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Get today's sanitized context: summary, facts, and behavioral task units")]
-    fn get_today_context(&self) -> Json<TextOutput> {
-        Json(TextOutput {
-            text: get_today_context(&*self.repo, platform()),
-        })
+    #[tool(
+        description = "[Read-only] Get today's sanitized context: summary, facts, and behavioral task units",
+        annotations(read_only_hint = true)
+    )]
+    fn get_today_context(&self) -> Result<Json<MarkdownOutput>, ToolFail> {
+        get_today_context(&*self.repo, platform())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "What the user is likely working on now (sanitized app/window/task, no keystrokes)")]
-    fn what_working_on_now(&self) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: what_working_on_now(&*self.repo, &today()),
-        })
+    #[tool(
+        description = "[Read-only] What the user is likely working on now (sanitized app/window/task, no keystrokes)",
+        annotations(read_only_hint = true)
+    )]
+    fn what_working_on_now(&self) -> Result<Json<WorkingOnNow>, ToolFail> {
+        what_working_on_now(&*self.repo, &today())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Generate today's work summary via DayRecord's trusted LLM (requires capture service)")]
+    #[tool(
+        description = "[Side-effect] Generate today's work summary via DayRecord's trusted LLM (requires capture service IPC)",
+        annotations(read_only_hint = false)
+    )]
     fn generate_today_summary(
         &self,
         Parameters(OptionalDayParams { day }): Parameters<OptionalDayParams>,
-    ) -> Json<TextOutput> {
-        Json(TextOutput {
-            text: generate_today_summary(self.control.as_ref(), day),
-        })
+    ) -> Result<Json<MarkdownOutput>, ToolFail> {
+        generate_today_summary(
+            self.control.as_ref(),
+            day,
+            db_recording(&self.repo),
+        )
+        .map(Json)
+        .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Consolidate memory: behavioral patterns, task units, and facts (requires capture service)")]
+    #[tool(
+        description = "[Side-effect] Consolidate memory: behavioral patterns, task units, and facts (requires capture service IPC)",
+        annotations(read_only_hint = false)
+    )]
     fn consolidate_memory(
         &self,
         Parameters(OptionalDayParams { day }): Parameters<OptionalDayParams>,
-    ) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: consolidate_memory(self.control.as_ref(), day),
-        })
+    ) -> Result<Json<ConsolidateOutput>, ToolFail> {
+        consolidate_memory(self.control.as_ref(), day, db_recording(&self.repo))
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Pause DayRecord capture (requires capture service)")]
-    fn pause_recording(&self) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: pause_recording(self.control.as_ref()),
-        })
+    #[tool(
+        description = "[Side-effect] Pause DayRecord capture (requires capture service IPC)",
+        annotations(read_only_hint = false)
+    )]
+    fn pause_recording(&self) -> Result<Json<ControlAck>, ToolFail> {
+        pause_recording(self.control.as_ref(), db_recording(&self.repo))
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Resume DayRecord capture (requires capture service)")]
-    fn resume_recording(&self) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: resume_recording(self.control.as_ref()),
-        })
+    #[tool(
+        description = "[Side-effect] Resume DayRecord capture (requires capture service IPC)",
+        annotations(read_only_hint = false)
+    )]
+    fn resume_recording(&self) -> Result<Json<ControlAck>, ToolFail> {
+        resume_recording(self.control.as_ref(), db_recording(&self.repo))
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 
-    #[tool(description = "Get recording status and today's stats (requires capture service)")]
-    fn get_recording_status(&self) -> Json<JsonTextOutput> {
-        Json(JsonTextOutput {
-            json: get_recording_status(self.control.as_ref()),
-        })
+    #[tool(
+        description = "Get recording status: persisted DB setting vs live capture IPC (IPC optional)",
+        annotations(read_only_hint = true)
+    )]
+    fn get_recording_status(&self) -> Result<Json<RecordingStatusOutput>, ToolFail> {
+        get_recording_status(&*self.repo, self.control_readonly.as_ref())
+            .map(Json)
+            .map_err(ToolFail::new)
     }
 }
 
@@ -170,10 +202,12 @@ impl ServerHandler for DayRecordMcp {
                 .enable_resources()
                 .build(),
         )
+        .with_server_info(Implementation::new("dayrecord", VERSION))
         .with_instructions(
             "DayRecord user context — sanitized profile, behavioral insights, and daily summaries. \
-             Read tools work offline from local DB. Trigger/control tools require the DayRecord capture \
-             service (GUI or `dayrecord daemon`). No raw keystrokes are ever exposed.",
+             Tools marked [Read-only] work offline from local DB. [Side-effect] tools require the capture \
+             service (GUI or `dayrecord daemon`) over local IPC. `recording_state_db` is the persisted \
+             setting; `control_ipc_online` means live capture is reachable. No raw keystrokes are exposed.",
         )
     }
 
@@ -240,9 +274,16 @@ fn resource_err(msg: impl Into<String>) -> McpError {
 }
 
 pub async fn run(rt: AppRuntime) -> Result<()> {
+    let exe = std::env::current_exe().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let repo = rt.repo_arc();
+    let may_autostart = {
+        let repo = repo.clone();
+        Arc::new(move || mcp_autostart_allowed(repo.as_ref()))
+    };
     let service = DayRecordMcp {
-        repo: rt.repo_arc(),
-        control: Arc::new(IpcControlClient),
+        repo: repo.clone(),
+        control: Arc::new(AutoStartControlClient::new(exe, may_autostart)),
+        control_readonly: Arc::new(IpcControlClient),
     };
     let (stdin, stdout) = rmcp::transport::io::stdio();
     let running = service.serve((stdin, stdout)).await?;
