@@ -72,7 +72,7 @@ dayrecord context --scope user --format json
 # 近 7 日复盘
 dayrecord context --scope recent:7 --format md
 
-# MCP（给 nanobot 等）
+# MCP（给 nanobot 等；需先启动 GUI 或 dayrecord daemon 才能触发 AI/控制录制）
 dayrecord mcp
 
 # 文件导出
@@ -82,6 +82,57 @@ dayrecord export --target nanobot
 ```
 
 数据目录：`dayrecord data-dir`
+
+## MCP 快速接入
+
+适用于 **Cursor**、Claude Desktop、nanobot 等支持 MCP 的 Agent。DayRecord MCP 通过 stdio 启动，**不暴露原始键入**，只返回脱敏画像、复盘与行为洞察。
+
+### 1. 安装 CLI
+
+```bash
+# 预编译：见 docs/install-prebuilt.md
+# 或从源码
+cargo install --path crates/dayrecord-cli
+dayrecord data-dir   # 确认能运行；数据库路径因平台而异
+```
+
+Windows 若未加入 PATH，在配置里写 `dayrecord.exe` 的**完整路径**（例如 `C:\\Users\\YOU\\.cargo\\bin\\dayrecord.exe`）。
+
+### 2. 写入 MCP 配置
+
+**Cursor**（`%USERPROFILE%\.cursor\mcp.json` 或 `~/.cursor/mcp.json`）：
+
+```json
+{
+  "mcpServers": {
+    "dayrecord": {
+      "command": "dayrecord",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+`command` 不在 PATH 时改为绝对路径。其他客户端的配置格式相同，仅文件路径不同（见各产品文档）。
+
+### 3. 启用并验证
+
+1. 在 MCP 设置中**开启** `dayrecord`（改配置后建议关 → 开，或重启 IDE）。
+2. 正常应看到 **10 个 tools** 与 **3 个 resources**（另有模板 `dayrecord://memory/{date}`）。
+3. 让 Agent 试调只读工具，例如 `get_today_context` 或读取资源 `dayrecord://context/today`。
+
+### 4. 工具一览
+
+| 类型 | 工具 | 需要采集服务？ |
+|------|------|----------------|
+| 只读 | `get_user_profile` · `query_user_facts` · `get_recent_summary` · `get_today_context` · `what_working_on_now` | 否（读本地 `dayrecord.db`） |
+| 触发 / 控制 | `generate_today_summary` · `consolidate_memory` · `pause_recording` · `resume_recording` · `get_recording_status` | 是（GUI 或 `dayrecord daemon`） |
+
+**Resources：** `dayrecord://user/profile` · `dayrecord://facts/active` · `dayrecord://context/today` · `dayrecord://memory/{YYYY-MM-DD}`
+
+触发类工具在采集服务未运行时会返回结构化错误，提示先启动 GUI 或 daemon。API Key 在 GUI 设置中配置（keyring）；未配置时触发类走 Mock LLM（仅适合开发）。
+
+更多细节（LLM 配置、文件导出兜底）：[nanobot 接入](docs/integrations/nanobot.md) · [Agent 上下文说明](docs/AGENT-CONTEXT.md)
 
 ## 平台支持
 
@@ -106,6 +157,7 @@ cd frontend && npm test
 
 ## 文档
 
+- [Agent 上下文说明](docs/AGENT-CONTEXT.md)
 - [隐私说明](PRIVACY.md)
 - [贡献指南](CONTRIBUTING.md)
 - [预编译安装](docs/install-prebuilt.md)

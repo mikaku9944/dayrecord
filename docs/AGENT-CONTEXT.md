@@ -28,7 +28,7 @@ Hermes agent、小龙虾、nanobot 等个人 Agent 的上下文主要来自：
 |-------|-------------------------|
 | **Hermes Agent** | 导出 `USER.md` / `MEMORY.md` / `memories/*.md` → `~/.hermes/memories/` |
 | **小龙虾** | 同上：标准 Markdown 记忆文件，拷贝或软链到 Agent 记忆目录 |
-| **nanobot** | 同上；后续可提供 JSON context feed |
+| **nanobot** | MCP（`dayrecord mcp`）+ 文件导出 |
 | **任意 Agent** | 不绑定运行时；记忆为文件，非专有 DB |
 
 ## 架构
@@ -76,16 +76,22 @@ Agent 能回答：
 - [x] 习惯画像 → `USER.md`
 - [x] 事实抽取 → `MEMORY.md` / `facts.md`
 - [x] Hermes 格式导出 + 可选自动导出
+- [x] MCP 只读上下文（脱敏画像 / 复盘 / 行为洞察）
+- [x] MCP 触发 AI + 录制控制（经本地 IPC，需采集服务）
 
 ## 下一阶段（Agent Context API）
 
 1. **`context.json`** — 机器可读当日上下文（项目、焦点、未决线程、最近决策）
-2. **本地 HTTP / IPC 查询** — Agent 工具可调用：
-   - `what_is_user_working_on_now`
+2. **增量能力**
    - `get_recent_project_state`
    - `list_open_threads`
 3. **增量推送** — 导出目录文件变更时通知 Agent（watch / webhook）
 4. **跨 Agent 记忆契约** — 文档化字段，小龙虾/nanobot 各写一层薄适配
+
+已完成（MCP）：
+
+- [x] `what_working_on_now` → MCP 工具 `what_working_on_now`
+- [x] 本地 IPC 查询 / 控制 → `dayrecord-runtime` control server（`127.0.0.1` + `control.port`）
 
 ## 设计原则
 
