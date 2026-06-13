@@ -11,6 +11,7 @@ pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
 pub struct DeepSeekClient {
     api_key: String,
     base_url: String,
+    model: String,
     client: Client,
 }
 
@@ -19,6 +20,7 @@ impl DeepSeekClient {
         Self {
             api_key: api_key.into(),
             base_url: DEEPSEEK_URL.to_string(),
+            model: DEEPSEEK_MODEL.to_string(),
             client: Client::builder()
                 .timeout(Duration::from_secs(120))
                 .build()
@@ -29,6 +31,15 @@ impl DeepSeekClient {
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
+    }
+
+    pub fn model_name(&self) -> &str {
+        &self.model
     }
 }
 
@@ -63,7 +74,7 @@ struct ChatChoiceMessage {
 impl LlmClient for DeepSeekClient {
     fn complete(&self, system: &str, user: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let body = ChatRequest {
-            model: DEEPSEEK_MODEL,
+            model: &self.model,
             messages: vec![
                 ChatMessage {
                     role: "system",
@@ -133,5 +144,34 @@ mod tests {
             .with_base_url(format!("{}/chat/completions", server.uri()));
         let out = client.complete("sys", "user").expect("complete");
         assert!(out.contains("今日概览"));
+    }
+
+    #[test]
+    fn sends_custom_model_when_configured() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let server = rt.block_on(async { MockServer::start().await });
+        rt.block_on(async {
+            Mock::given(method("POST"))
+                .and(path("/chat/completions"))
+                .and(body_json(serde_json::json!({
+                    "model": "local-llm",
+                    "messages": [
+                        {"role": "system", "content": "sys"},
+                        {"role": "user", "content": "user"}
+                    ],
+                    "temperature": 0.2
+                })))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "choices": [{"message": {"content": "ok"}}]
+                })))
+                .mount(&server)
+                .await;
+        });
+
+        let client = DeepSeekClient::new("test-key")
+            .with_base_url(format!("{}/chat/completions", server.uri()))
+            .with_model("local-llm");
+        let out = client.complete("sys", "user").expect("complete");
+        assert_eq!(out, "ok");
     }
 }

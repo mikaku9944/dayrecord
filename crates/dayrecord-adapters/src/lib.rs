@@ -9,6 +9,7 @@ pub mod keyboard_macos;
 #[cfg(target_os = "linux")]
 pub mod keyboard_linux;
 pub mod llm;
+pub mod llm_factory;
 pub mod platform;
 pub mod repository;
 pub mod secret;
@@ -25,6 +26,7 @@ pub mod context_linux;
 
 pub use clock::SystemClock;
 pub use llm::DeepSeekClient;
+pub use llm_factory::{load_api_key, ConfiguredLlm, MockLlm};
 pub use platform::{
     platform_clipboard, platform_context_sampler, platform_secret_store, platform_window_sampler,
     start_keyboard_capture,
