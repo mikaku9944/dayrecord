@@ -1,0 +1,35 @@
+{
+  "name": "@dayrecord/mcp",
+  "version": "0.1.2",
+  "description": "DayRecord MCP launcher for Cursor — npx installs and runs the native MCP server (auto-downloads release binary)",
+  "license": "MIT",
+  "bin": {
+    "dayrecord-mcp": "bin/dayrecord-mcp.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikaku9944/dayrecord.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/mikaku9944/dayrecord#mcp-quick-start",
+  "bugs": {
+    "url": "https://github.com/mikaku9944/dayrecord/issues"
+  },
+  "keywords": [
+    "mcp",
+    "cursor",
+    "dayrecord",
+    "model-context-protocol",
+    "agent"
+  ]
+}

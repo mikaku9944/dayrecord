@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.5.0.schema.json
+
+PackageIdentifier: com.dayrecord.cli
+PackageVersion: 0.1.1
+PackageLocale: en-US
+Publisher: DayRecord
+PackageName: DayRecord CLI
+License: MIT
+ShortDescription: DayRecord CLI and MCP server for AI agent context
+Moniker: dayrecord
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: dayrecord.exe
+        PortableCommandAlias: dayrecord
+      - RelativeFilePath: dayrecord.exe
+        PortableCommandAlias: dayrecord-mcp
+    InstallerUrl: https://github.com/mikaku9944/dayrecord/releases/download/v0.1.1/dayrecord-0.1.1-x86_64-pc-windows-msvc.zip
+    InstallerSha256: REPLACE_AT_RELEASE
+ManifestType: singleton
+ManifestVersion: 1.5.0
