@@ -3,6 +3,7 @@
 pub mod connect;
 pub mod consolidation;
 pub mod context;
+pub mod control;
 pub mod domain;
 pub mod error;
 pub mod export;
@@ -13,5 +14,6 @@ pub mod ports;
 pub mod prompt;
 pub mod redact;
 pub mod summary;
+pub mod time_local;
 
 pub use error::CoreError;
