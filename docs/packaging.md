@@ -2,6 +2,8 @@
 
 ## CLI / MCP 二进制
 
+**Cursor / Agent 一键（npm）：** [@dayrecord/mcp](https://www.npmjs.com/package/@dayrecord/mcp) — `npx -y @dayrecord/mcp`，首次运行自动下载 Release 二进制。发布：`scripts/publish-mcp.ps1`（需 `@dayrecord` npm 组织权限）。
+
 **预编译（用户）：** [GitHub Releases](https://github.com/mikaku9944/dayrecord/releases) — 见 [install-prebuilt.md](install-prebuilt.md)
 
 **源码安装（开发者）：**

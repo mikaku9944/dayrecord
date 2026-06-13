@@ -2,7 +2,24 @@
 
 发布页：[GitHub Releases](https://github.com/mikaku9944/dayrecord/releases)
 
-## CLI（Agent 接入推荐）
+## 一键安装（推荐）
+
+**Windows：**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1 -WriteConfig
+```
+
+安装到 `%LOCALAPPDATA%\Programs\dayrecord\dayrecord.exe`，可选写入 `~/.cursor/mcp.json`。
+
+**macOS / Linux：**
+
+```bash
+chmod +x scripts/install.sh
+./scripts/install.sh --write-config
+```
+
+## CLI（手动）
 
 ### Windows
 
@@ -45,15 +62,32 @@ dayrecord --help
 
 ## MCP 配置示例
 
+**推荐 — npx（[已发布 npm](https://www.npmjs.com/package/@dayrecord/mcp)）**：只需 Node.js 18+，首次运行自动下载原生 CLI。
+
 ```json
 {
   "mcpServers": {
     "dayrecord": {
-      "command": "dayrecord",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@dayrecord/mcp"]
+    }
+  }
+}
+```
+
+macOS / Linux 将 `command` 改为 `npx`，`args` 为 `["-y", "@dayrecord/mcp"]`。
+
+**原生二进制（Windows）** — `install.ps1` 装到 `%LOCALAPPDATA%\Programs\dayrecord\dayrecord.exe`；`install-local.ps1` / npx 自动下载装到 `...\dayrecord\bin\`：
+
+```json
+{
+  "mcpServers": {
+    "dayrecord": {
+      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\dayrecord\\dayrecord.exe",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-Windows 若未加入 PATH，请写 `dayrecord.exe` 的完整路径。
+（若二进制在 `bin\` 子目录，路径中加上 `bin\\`。）

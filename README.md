@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/mikaku9944/dayrecord/actions/workflows/ci.yml/badge.svg)](https://github.com/mikaku9944/dayrecord/actions/workflows/ci.yml)
 [![Release](https://github.com/mikaku9944/dayrecord/actions/workflows/release.yml/badge.svg)](https://github.com/mikaku9944/dayrecord/releases)
+[![npm @dayrecord/mcp](https://img.shields.io/npm/v/@dayrecord/mcp)](https://www.npmjs.com/package/@dayrecord/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **看得懂你在干什么，却从不截一张图。**
@@ -85,54 +86,117 @@ dayrecord export --target nanobot
 
 ## MCP 快速接入
 
-适用于 **Cursor**、Claude Desktop、nanobot 等支持 MCP 的 Agent。DayRecord MCP 通过 stdio 启动，**不暴露原始键入**，只返回脱敏画像、复盘与行为洞察。
+适用于 **Cursor**、Claude Desktop、Codex、nanobot 等。配置好后重载 MCP 即可使用；**只读工具**直接读本地 `dayrecord.db`；**控制类工具**在已同意采集（`consent=true`）时会按需自动拉起后台 `dayrecord daemon`（可用设置 `mcp_autostart_daemon=false` 关闭）。
 
-### 1. 安装 CLI
+### 1. Cursor 一键（推荐，已发布 npm）
 
-```bash
-# 预编译：见 docs/install-prebuilt.md
-# 或从源码
-cargo install --path crates/dayrecord-cli
-dayrecord data-dir   # 确认能运行；数据库路径因平台而异
-```
+只需 Node.js 18+，**无需** clone 仓库或先跑安装脚本。`npx` 会拉取 [@dayrecord/mcp](https://www.npmjs.com/package/@dayrecord/mcp)，首次运行自动下载 GitHub Release 原生 CLI。
 
-Windows 若未加入 PATH，在配置里写 `dayrecord.exe` 的**完整路径**（例如 `C:\\Users\\YOU\\.cargo\\bin\\dayrecord.exe`）。
-
-### 2. 写入 MCP 配置
-
-**Cursor**（`%USERPROFILE%\.cursor\mcp.json` 或 `~/.cursor/mcp.json`）：
+**Windows：**
 
 ```json
 {
   "mcpServers": {
     "dayrecord": {
-      "command": "dayrecord",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@dayrecord/mcp"]
+    }
+  }
+}
+```
+
+**macOS / Linux：** `"command": "npx"`, `"args": ["-y", "@dayrecord/mcp"]`
+
+详见 [packages/mcp/README.md](packages/mcp/README.md)。
+
+### 2. 原生二进制安装（可选）
+
+**Windows（`install.ps1` → `%LOCALAPPDATA%\Programs\dayrecord\dayrecord.exe`）：**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1 -WriteConfig
+```
+
+**macOS / Linux（`~/.local/bin/dayrecord`）：**
+
+```bash
+chmod +x scripts/install.sh
+./scripts/install.sh --write-config
+```
+
+**从源码构建到稳定路径（开发者，`cargo install` → `...\dayrecord\bin\`）：**
+
+```powershell
+powershell -File scripts\install-local.ps1 -WriteConfig
+```
+
+> `scripts\run.cmd` 只启动 **GUI**（`dayrecord-app`），不会更新 CLI/MCP 二进制。MCP 由 IDE 按 `mcp.json` 独立拉起。
+
+**`mcp.json` 示例（原生路径，无 npm）：**
+
+```json
+{
+  "mcpServers": {
+    "dayrecord": {
+      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\dayrecord\\bin\\dayrecord.exe",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-`command` 不在 PATH 时改为绝对路径。其他客户端的配置格式相同，仅文件路径不同（见各产品文档）。
+（`install.ps1` 装到上级目录时把路径中的 `bin\\` 去掉即可。）或使用 MCP 专用入口：
+
+```json
+{
+  "mcpServers": {
+    "dayrecord": {
+      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\dayrecord\\bin\\dayrecord-mcp.exe",
+      "args": []
+    }
+  }
+}
+```
 
 ### 3. 启用并验证
 
-1. 在 MCP 设置中**开启** `dayrecord`（改配置后建议关 → 开，或重启 IDE）。
-2. 正常应看到 **10 个 tools** 与 **3 个 resources**（另有模板 `dayrecord://memory/{date}`）。
-3. 让 Agent 试调只读工具，例如 `get_today_context` 或读取资源 `dayrecord://context/today`。
+1. 在 MCP 设置中**开启** `dayrecord`（改配置后建议关 → 开）。
+2. 首次使用控制类工具前：`dayrecord consent --accept true`（或在 GUI 中同意采集）。
+3. 正常应看到 **10 个 tools** 与 **3 个 resources**。
+4. 验证：
+
+```bash
+dayrecord --version
+dayrecord mcp --version
+dayrecord doctor mcp
+```
+
+`doctor mcp` 检查二进制漂移、`tools/list`、控制类 `isError`、以及 daemon 自启 + IPC（在 consent 允许时）。
+
+### Codex（`~/.codex/config.toml`）
+
+```toml
+[mcp_servers.dayrecord]
+command = 'C:\\Users\\YOU\\AppData\\Local\\Programs\\dayrecord\\bin\\dayrecord.exe'
+args = ["mcp"]
+```
+
+或使用 npx：`command = "npx"`, `args = ["-y", "@dayrecord/mcp"]`
 
 ### 4. 工具一览
 
 | 类型 | 工具 | 需要采集服务？ |
 |------|------|----------------|
-| 只读 | `get_user_profile` · `query_user_facts` · `get_recent_summary` · `get_today_context` · `what_working_on_now` | 否（读本地 `dayrecord.db`） |
-| 触发 / 控制 | `generate_today_summary` · `consolidate_memory` · `pause_recording` · `resume_recording` · `get_recording_status` | 是（GUI 或 `dayrecord daemon`） |
+| 只读 | `get_user_profile` · `query_user_facts` · `get_recent_summary` · `get_today_context` · `what_working_on_now` · `get_recording_status` | 否（读 DB；状态查询不触发自启） |
+| 触发 / 控制 | `generate_today_summary` · `consolidate_memory` · `pause_recording` · `resume_recording` | 是（MCP 可自动拉起 daemon，需 `consent=true`） |
+
+触发类在 `consent` 未同意或 `mcp_autostart_daemon=false` 时返回 `isError: true` 及结构化 hint。
 
 **Resources：** `dayrecord://user/profile` · `dayrecord://facts/active` · `dayrecord://context/today` · `dayrecord://memory/{YYYY-MM-DD}`
 
-触发类工具在采集服务未运行时会返回结构化错误，提示先启动 GUI 或 daemon。API Key 在 GUI 设置中配置（keyring）；未配置时触发类走 Mock LLM（仅适合开发）。
+API Key 在 GUI 设置中配置（keyring）；未配置时触发类走 Mock LLM（仅适合开发）。
 
-更多细节（LLM 配置、文件导出兜底）：[nanobot 接入](docs/integrations/nanobot.md) · [Agent 上下文说明](docs/AGENT-CONTEXT.md)
+更多细节：[nanobot 接入](docs/integrations/nanobot.md) · [Agent 上下文说明](docs/AGENT-CONTEXT.md) · [预编译安装](docs/install-prebuilt.md) · [Scoop/winget 清单](packaging/)
 
 ## 平台支持
 
