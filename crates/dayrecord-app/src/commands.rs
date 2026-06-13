@@ -86,6 +86,11 @@ pub fn set_recording(state: State<'_, AppState>, recording: bool) -> Result<(), 
     if !recording {
         state.orchestrator.flush_pending().map_err(|e| e.to_string())?;
     }
+    state
+        .orchestrator
+        .repo
+        .set_setting("recording", if recording { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

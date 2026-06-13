@@ -16,6 +16,9 @@ use commands::{
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
+use dayrecord_runtime::{spawn_control_server, try_acquire_instance_lock, OrchestratorControlHandler};
+use dayrecord_core::ports::Repository;
+use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +28,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(state)
         .setup(|app| {
+            let capture_lock = try_acquire_instance_lock().ok();
+            let orch = app.state::<AppState>().orchestrator.clone();
+
+            if capture_lock.is_some() {
+                let control = Arc::new(OrchestratorControlHandler {
+                    orchestrator: orch.clone(),
+                });
+                let _control_thread = spawn_control_server(control);
+            } else {
+                tracing::warn!(
+                    "another DayRecord capture service is running; UI-only mode (no new capture threads)"
+                );
+            }
+
             let open_i = MenuItem::with_id(app, "open", "打开主窗口", true, None::<&str>)?;
             let pause_i = MenuItem::with_id(app, "pause", "暂停/继续录制", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -43,6 +60,13 @@ pub fn run() {
                         let state = app.state::<AppState>();
                         let next = !state.orchestrator.is_recording();
                         state.orchestrator.set_recording(next);
+                        if !next {
+                            let _ = state.orchestrator.flush_pending();
+                        }
+                        let _ = state.orchestrator.repo.set_setting(
+                            "recording",
+                            if next { "true" } else { "false" },
+                        );
                         let _ = app.emit("recording-changed", next);
                     }
                     "quit" => {
@@ -66,29 +90,33 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let orch = app.state::<AppState>().orchestrator.clone();
-            std::thread::spawn(move || {
-                loop {
-                    let _ = orch.tick_window_sample();
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-            });
-
-            #[cfg(windows)]
-            {
-                use std::sync::mpsc;
-                let (tx, rx) = mpsc::channel();
-                let orch_kb = app.state::<AppState>().orchestrator.clone();
-                let _ = dayrecord_adapters::start_keyboard_capture(tx);
+            let orch_sample = app.state::<AppState>().orchestrator.clone();
+            if capture_lock.is_some() {
                 std::thread::spawn(move || {
                     loop {
-                        for event in rx.try_iter() {
-                            let _ = orch_kb.handle_key_event(event);
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        let _ = orch_sample.tick_window_sample();
+                        std::thread::sleep(std::time::Duration::from_secs(1));
                     }
                 });
+
+                #[cfg(windows)]
+                {
+                    use std::sync::mpsc;
+                    let (tx, rx) = mpsc::channel();
+                    let orch_kb = app.state::<AppState>().orchestrator.clone();
+                    let _ = dayrecord_adapters::start_keyboard_capture(tx);
+                    std::thread::spawn(move || {
+                        loop {
+                            for event in rx.try_iter() {
+                                let _ = orch_kb.handle_key_event(event);
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                    });
+                }
             }
+
+            let _capture_lock = capture_lock;
 
             Ok(())
         })

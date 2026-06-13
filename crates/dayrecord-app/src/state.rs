@@ -1,19 +1,20 @@
 use crate::orchestrator::Orchestrator;
 use dayrecord_adapters::{
-    platform_clipboard, platform_secret_store, platform_window_sampler, DeepSeekClient,
+    platform_clipboard, platform_secret_store, platform_window_sampler, ConfiguredLlm,
     KeyringSecretStore, SqliteRepository, SystemClock,
 };
 use dayrecord_core::paths;
-use dayrecord_core::ports::{LlmClient, SecretStore};
+use dayrecord_core::ports::SecretStore;
 use std::sync::Arc;
 
 pub type AppWindowSampler = dayrecord_adapters::ActiveWindowSampler;
 pub type AppClipboard = dayrecord_adapters::clipboard::ArboardClipboard;
+pub type AppLlm = ConfiguredLlm;
 
 pub type AppOrchestrator = Orchestrator<
     SystemClock,
     SqliteRepository,
-    DeepSeekLlm,
+    AppLlm,
     AppWindowSampler,
     AppClipboard,
     AppContextSampler,
@@ -44,53 +45,6 @@ fn app_context_sampler() -> AppContextSampler {
     dayrecord_core::ports::NullContextSampler
 }
 
-enum LlmBackend {
-    Client(DeepSeekClient),
-    Mock(MockLlm),
-}
-
-/// LLM client that can reload when the user saves a new API key (no app restart).
-pub struct DeepSeekLlm {
-    backend: std::sync::Mutex<LlmBackend>,
-}
-
-pub struct MockLlm;
-
-impl MockLlm {
-    fn complete(&self, _: &str, _: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        Ok("## 今日概览（含大致时间分配）\nplaceholder\n## 主要工作内容（按应用/项目/场景分组，结合时长说明投入）\nplaceholder\n## 重要粘贴片段摘要\nplaceholder\n## 明日待办（能推断则列出，否则写「暂无」）\n暂无".into())
-    }
-}
-
-impl DeepSeekLlm {
-    pub fn new(api_key: Option<String>) -> Self {
-        Self {
-            backend: std::sync::Mutex::new(match api_key.filter(|k| !k.is_empty()) {
-                Some(key) => LlmBackend::Client(DeepSeekClient::new(key)),
-                None => LlmBackend::Mock(MockLlm),
-            }),
-        }
-    }
-
-    pub fn reload(&self, api_key: Option<String>) {
-        let mut backend = self.backend.lock().unwrap();
-        *backend = match api_key.filter(|k| !k.is_empty()) {
-            Some(key) => LlmBackend::Client(DeepSeekClient::new(key)),
-            None => LlmBackend::Mock(MockLlm),
-        };
-    }
-}
-
-impl LlmClient for DeepSeekLlm {
-    fn complete(&self, system: &str, user: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let backend = self.backend.lock().unwrap();
-        match &*backend {
-            LlmBackend::Client(c) => c.complete(system, user),
-            LlmBackend::Mock(m) => m.complete(system, user),
-        }
-    }
-}
-
 pub fn data_dir() -> std::path::PathBuf {
     paths::ensure_data_dir().unwrap_or_else(|_| paths::data_dir())
 }
@@ -102,10 +56,11 @@ pub fn db_path() -> std::path::PathBuf {
 pub fn build_orchestrator(api_key: Option<String>) -> Result<Arc<AppOrchestrator>, String> {
     paths::ensure_data_dir().map_err(|e| e.to_string())?;
     let repo = Arc::new(SqliteRepository::open(&db_path()).map_err(|e| e.to_string())?);
+    let llm = Arc::new(ConfiguredLlm::from_key_and_settings(repo.clone(), api_key));
     Ok(Arc::new(Orchestrator::new(
         Arc::new(SystemClock),
         repo,
-        Arc::new(DeepSeekLlm::new(api_key)),
+        llm,
         Arc::new(platform_window_sampler()),
         Arc::new(platform_clipboard()),
         Arc::new(app_context_sampler()),
@@ -117,7 +72,7 @@ pub fn secret_store() -> KeyringSecretStore {
 }
 
 pub fn load_api_key<S: SecretStore>(store: &S) -> Option<String> {
-    store.get("deepseek_api_key").ok().flatten()
+    dayrecord_adapters::load_api_key(store)
 }
 
 pub fn save_api_key<S: SecretStore>(store: &S, key: &str) -> Result<(), String> {
