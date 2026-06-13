@@ -7,6 +7,8 @@ frontend/dist/
 *.secret
 .env
 .env.*
+scripts/local.env.ps1
+.local-install/
 .DS_Store
 Thumbs.db
 *.log

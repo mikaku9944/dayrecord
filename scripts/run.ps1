@@ -5,6 +5,10 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 
 $env:Path = "$env:USERPROFILE\.cargo\bin;C:\hqproject\nodejs;" + $env:Path
 
+# Optional per-machine overrides (gitignored): copy scripts/local.env.ps1.example
+$localEnv = Join-Path $PSScriptRoot "local.env.ps1"
+if (Test-Path $localEnv) { . $localEnv }
+
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Error "找不到 npm。请先安装 Node.js 并将其加入 PATH。"
 }
