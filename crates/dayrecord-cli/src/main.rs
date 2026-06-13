@@ -1,4 +1,5 @@
 mod daemon;
+pub mod mcp_handlers;
 mod mcp_server;
 mod runtime;
 
