@@ -12,26 +12,30 @@ pub struct IpcControlClient;
 
 impl ControlClient for IpcControlClient {
     fn request(&self, cmd: ControlCommand) -> Result<ControlResponse, ControlError> {
-        if !capture_service_likely_running() {
-            return Err(ControlError::ServiceNotRunning);
-        }
-        let port = super::server::read_control_port().map_err(|e| ControlError::Transport(e))?;
-        let mut stream =
-            TcpStream::connect(format!("127.0.0.1:{port}")).map_err(|_| ControlError::ServiceNotRunning)?;
-        let payload = serde_json::to_string(&cmd).map_err(|e| ControlError::Protocol(e.to_string()))?;
-        writeln!(stream, "{payload}").map_err(|e| ControlError::Transport(e.to_string()))?;
-        stream.flush().map_err(|e| ControlError::Transport(e.to_string()))?;
-
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| ControlError::Transport(e.to_string()))?;
-        serde_json::from_str(line.trim()).map_err(|e| ControlError::Protocol(e.to_string()))
+        ipc_request(&cmd)
     }
 }
 
-fn capture_service_likely_running() -> bool {
+pub fn ipc_request(cmd: &ControlCommand) -> Result<ControlResponse, ControlError> {
+    if !capture_service_likely_running() {
+        return Err(ControlError::ServiceNotRunning);
+    }
+    let port = super::server::read_control_port().map_err(ControlError::Transport)?;
+    let mut stream =
+        TcpStream::connect(format!("127.0.0.1:{port}")).map_err(|_| ControlError::ServiceNotRunning)?;
+    let payload = serde_json::to_string(cmd).map_err(|e| ControlError::Protocol(e.to_string()))?;
+    writeln!(stream, "{payload}").map_err(|e| ControlError::Transport(e.to_string()))?;
+    stream.flush().map_err(|e| ControlError::Transport(e.to_string()))?;
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| ControlError::Transport(e.to_string()))?;
+    serde_json::from_str(line.trim()).map_err(|e| ControlError::Protocol(e.to_string()))
+}
+
+pub fn capture_service_likely_running() -> bool {
     let pid_path = paths::data_dir().join("dayrecord.pid");
     let Ok(raw) = std::fs::read_to_string(&pid_path) else {
         return false;
