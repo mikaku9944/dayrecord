@@ -2,11 +2,12 @@
 
 use crate::domain::habits::normalize_title;
 use crate::models::{Activity, Session};
-use chrono::{Datelike, Timelike};
+use crate::time_local::{local_day_string, local_hour, local_weekday};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 pub const RHYTHM_MIN_RATE: f64 = 0.6;
+pub const RHYTHM_MIN_DAYS: usize = 4;
 pub const REPEAT_MIN_DAYS: usize = 3;
 pub const TASK_GAP_SECS: i64 = 600;
 pub const FLOW_PREVIEW_CHARS: usize = 80;
@@ -50,7 +51,10 @@ pub fn detect_rhythms(activities: &[Activity], window_days: i64) -> Vec<RhythmPa
         return vec![];
     }
 
-    let days: HashSet<String> = activities.iter().map(|a| a.day.clone()).collect();
+    let days: HashSet<String> = activities
+        .iter()
+        .map(|a| local_day_string(a.started_at))
+        .collect();
     let total_days = days.len().max(1);
     let mut days_by_weekday: HashMap<u8, HashSet<String>> = HashMap::new();
 
@@ -58,24 +62,24 @@ pub fn detect_rhythms(activities: &[Activity], window_days: i64) -> Vec<RhythmPa
     let mut daily_weekday_hour_app: HashMap<(String, u8, u8), HashSet<String>> = HashMap::new();
 
     for a in activities {
-        let weekday = a.started_at.weekday().num_days_from_monday() as u8;
+        let day = local_day_string(a.started_at);
+        let weekday = local_weekday(a.started_at);
         days_by_weekday
             .entry(weekday)
             .or_default()
-            .insert(a.day.clone());
+            .insert(day.clone());
         if a.seconds < 60 {
             continue;
         }
-        let hour = a.started_at.hour() as u8;
-        let weekday = a.started_at.weekday().num_days_from_monday() as u8;
+        let hour = local_hour(a.started_at);
         daily_hour_app
-            .entry((a.day.clone(), hour, weekday))
+            .entry((day.clone(), hour, weekday))
             .or_default()
             .insert(a.app_name.clone());
         daily_weekday_hour_app
             .entry((a.app_name.clone(), hour, weekday))
             .or_default()
-            .insert(a.day.clone());
+            .insert(day);
     }
 
     let mut patterns = Vec::new();
@@ -92,15 +96,17 @@ pub fn detect_rhythms(activities: &[Activity], window_days: i64) -> Vec<RhythmPa
 
     for ((app, hour), seen_days) in app_hour_days {
         let rate = seen_days.len() as f64 / total_days as f64;
-        if rate >= RHYTHM_MIN_RATE {
+        if seen_days.len() >= RHYTHM_MIN_DAYS && rate >= RHYTHM_MIN_RATE {
             patterns.push(RhythmPattern {
                 app_name: app.clone(),
                 hour,
                 weekday: None,
                 occurrence_rate: rate,
                 description: format!(
-                    "每天 {:02}:00 附近固定使用 {}",
-                    hour, app
+                    "经常在 {:02}:00 左右使用 {}（{:.0}% 活跃日）",
+                    hour,
+                    app,
+                    rate * 100.0
                 ),
             });
         }
@@ -113,7 +119,7 @@ pub fn detect_rhythms(activities: &[Activity], window_days: i64) -> Vec<RhythmPa
             .unwrap_or(1)
             .max(1);
         let rate = seen_days.len() as f64 / weekday_total as f64;
-        if rate >= RHYTHM_MIN_RATE {
+        if seen_days.len() >= RHYTHM_MIN_DAYS.min(weekday_total) && rate >= RHYTHM_MIN_RATE {
             let weekday_name = weekday_label(weekday);
             patterns.push(RhythmPattern {
                 app_name: app.clone(),
@@ -121,8 +127,11 @@ pub fn detect_rhythms(activities: &[Activity], window_days: i64) -> Vec<RhythmPa
                 weekday: Some(weekday),
                 occurrence_rate: rate,
                 description: format!(
-                    "每{} {:02}:00 附近固定使用 {}",
-                    weekday_name, hour, app
+                    "每{}经常在 {:02}:00 左右使用 {}（{:.0}% 该日）",
+                    weekday_name,
+                    hour,
+                    app,
+                    rate * 100.0
                 ),
             });
         }
@@ -360,6 +369,7 @@ fn weekday_label(weekday: u8) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time_local::local_hour;
     use chrono::{TimeZone, Utc};
 
     fn act(day: &str, app: &str, title: &str, hour: u32, seconds: u32) -> Activity {
@@ -398,7 +408,8 @@ mod tests {
             .map(|i| act(&format!("2026-06-{:02}", 10 + i), "code.exe", "main.rs", 9, 3600))
             .collect();
         let rhythms = detect_rhythms(&acts, 5);
-        assert!(rhythms.iter().any(|r| r.app_name == "code.exe" && r.hour == 9));
+        let expected_hour = local_hour(acts[0].started_at);
+        assert!(rhythms.iter().any(|r| r.app_name == "code.exe" && r.hour == expected_hour));
     }
 
     #[test]

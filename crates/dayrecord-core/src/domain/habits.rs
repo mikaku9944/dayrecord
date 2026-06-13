@@ -3,7 +3,7 @@
 //! Pure functions over `Activity`; the repository feeds the window of rows.
 
 use crate::models::Activity;
-use chrono::{Datelike, Timelike};
+use crate::time_local::{local_day_string, local_hour, local_weekday};
 use std::collections::HashMap;
 
 pub const DEFAULT_WINDOW_DAYS: i64 = 14;
@@ -121,9 +121,9 @@ pub fn build_profile(activities: &[Activity], window_days: i64) -> HabitProfile 
 
     for a in activities {
         let seconds = a.seconds as i64;
-        let hour = a.started_at.hour() as usize;
+        let hour = local_hour(a.started_at) as usize;
         hour_buckets[hour] += seconds;
-        let weekday = a.started_at.weekday().num_days_from_monday() as usize;
+        let weekday = local_weekday(a.started_at) as usize;
         weekday_secs[weekday] += seconds;
         *app_secs.entry(a.app_name.clone()).or_insert(0) += seconds;
         let project = normalize_title(&a.window_title, &a.app_name);
@@ -174,6 +174,7 @@ pub fn build_profile(activities: &[Activity], window_days: i64) -> HabitProfile 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time_local::local_hour;
     use chrono::{TimeZone, Utc};
 
     fn act(app: &str, title: &str, hour: u32, seconds: u32) -> Activity {
@@ -200,7 +201,8 @@ mod tests {
     fn peak_period_detects_block() {
         let acts: Vec<Activity> = (21..24).map(|h| act("code", "main.rs", h, 3600)).collect();
         let profile = build_profile(&acts, DEFAULT_WINDOW_DAYS);
-        assert!(profile.peak_period.contains("21:00"));
+        let expected = local_hour(acts[0].started_at);
+        assert!(profile.peak_period.contains(&format!("{expected:02}:00")));
     }
 
     #[test]

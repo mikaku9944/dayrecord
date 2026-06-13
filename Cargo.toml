@@ -21,7 +21,7 @@ keywords = ["mcp", "agent", "memory", "tauri", "productivity"]
 categories = ["command-line-utilities", "gui"]
 
 [workspace.dependencies]
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

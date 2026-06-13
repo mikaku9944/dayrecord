@@ -904,6 +904,7 @@ name = "dayrecord-cli"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "dayrecord-adapters",
  "dayrecord-core",
@@ -937,6 +938,9 @@ dependencies = [
  "chrono",
  "dayrecord-core",
  "rstest",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

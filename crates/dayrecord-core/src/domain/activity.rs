@@ -1,4 +1,5 @@
 use crate::models::{Activity, WindowSample};
+use crate::time_local::local_day_string;
 use chrono::{DateTime, Utc};
 
 pub const SAMPLE_INTERVAL_SECS: i64 = 5;
@@ -44,7 +45,7 @@ impl ActivityTracker {
             return None;
         }
         let started = self.segment_start.unwrap_or(ended_at);
-        let day = started.format("%Y-%m-%d").to_string();
+        let day = local_day_string(started);
         let activity = Activity {
             id: None,
             day,
