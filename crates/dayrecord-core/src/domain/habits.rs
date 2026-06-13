@@ -3,12 +3,12 @@
 //! Pure functions over `Activity`; the repository feeds the window of rows.
 
 use crate::models::Activity;
-use crate::time_local::{local_day_string, local_hour, local_weekday};
+use crate::time_local::{local_hour, local_weekday};
 use std::collections::HashMap;
 
 pub const DEFAULT_WINDOW_DAYS: i64 = 14;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct HabitProfile {
     pub window_days: i64,
     pub active_hours: Vec<(u8, i64)>,

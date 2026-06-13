@@ -38,7 +38,7 @@ impl ContextScope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ContextBundle {
     pub scope: String,
     pub generated_at: String,
@@ -51,7 +51,7 @@ pub struct ContextBundle {
     pub matched_facts: Vec<FactJson>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskUnitJson {
     pub day: String,
     pub started_at: String,
@@ -63,7 +63,7 @@ pub struct TaskUnitJson {
     pub confidence: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FactJson {
     pub id: Option<i64>,
     pub statement: String,
@@ -73,7 +73,7 @@ pub struct FactJson {
     pub source_day: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SummaryJson {
     pub day: String,
     pub content: String,

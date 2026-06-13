@@ -24,6 +24,7 @@ categories = ["command-line-utilities", "gui"]
 chrono = { version = "0.4", features = ["serde", "clock"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = { version = "1.0", features = ["chrono04"] }
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"

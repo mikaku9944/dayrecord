@@ -2,6 +2,7 @@
 
 use crate::models::DayStats;
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 pub const CONTROL_SOCKET_NAME: &str = "dayrecord-control";
 
@@ -30,7 +31,7 @@ pub struct ControlResponse {
     pub data: Option<ControlData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ControlData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording: Option<bool>,
@@ -65,6 +66,8 @@ impl ControlResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlError {
     ServiceNotRunning,
+    /// MCP daemon autostart blocked (consent off or `mcp_autostart_daemon=false`).
+    AutostartDenied(String),
     Transport(String),
     Protocol(String),
 }
@@ -72,7 +75,12 @@ pub enum ControlError {
 impl std::fmt::Display for ControlError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ServiceNotRunning => write!(f, "DayRecord capture service is not running"),
+            Self::ServiceNotRunning => write!(
+                f,
+                "DayRecord capture service is not running (control IPC offline; \
+                 `recording` in settings may still be true)"
+            ),
+            Self::AutostartDenied(msg) => write!(f, "{msg}"),
             Self::Transport(msg) => write!(f, "control transport error: {msg}"),
             Self::Protocol(msg) => write!(f, "control protocol error: {msg}"),
         }

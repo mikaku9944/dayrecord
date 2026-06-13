@@ -40,7 +40,7 @@ pub struct Summary {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DayStats {
     pub active_seconds: u32,
     pub session_count: u32,
